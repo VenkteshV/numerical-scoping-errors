@@ -13,7 +13,7 @@ class LLMHandler:
     """
     def __init__(
             self,
-            completion_params_file: str = "code/llm/completion_params.json",
+            completion_params_file: str = "llm/completion_params.json",
             log_stats: bool = False):
 
         self.completion_params = self.load_completion_params(completion_params_file)
@@ -73,14 +73,15 @@ class LLMHandler:
                                 chunk_time = time.time() - start_time
                                 print(f"Token received {chunk_time:.2f} seconds after request: {token}")
 
+            total_time = time.time() - start_time
+
             full_response = ''.join(collected_messages)
 
             if self.log_stats:
-                total_time = time.time() - start_time
                 print(f"Full response received {total_time:.2f} seconds after request")
                 print(f"Full response: {full_response}")
 
-            return full_response
+            return full_response, total_time
         except Exception as e:
             print(f"An error occurred: {e}")
             return None
