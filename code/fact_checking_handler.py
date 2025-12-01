@@ -28,7 +28,7 @@ class FactCheckingHandler:
         response, total_time = self.llm_handler.generate_response(self.system_prompt, user_prompt, on_token=on_tok)
         return response, total_time
     
-    def run(self, input_json_file: str, output_json_file: str, log=True) -> List[Dict[str, Any]]:
+    def run(self, input_json_file: str, output_json_file: str, log=True, checkpoint=20) -> List[Dict[str, Any]]:
         """Runs fact-checking on all queries in a input json file"""
         start_time = time.time()
         if log:
@@ -44,15 +44,20 @@ class FactCheckingHandler:
         if not log:
             on_tok = None
 
-        for query in input_json:
+        for i, query in enumerate(input_json):
             if log:
-                print(self.color_text(f"Fact-checking: {query['claim']}", "93"))
+                print(self.color_text(f"{i} Fact-checking: {query['claim']}", "93"))
 
             response, total_time = self.fact_check(query['claim'], query['evidences'], query['examples'], on_tok=on_tok)
             output['outputs'].append({'response': response, 'total_time': total_time})
 
             if log:
                 print(self.color_text(f"\nTotal time: {total_time}\n", "93"))
+
+            if i % checkpoint == 0:
+                with open(output_json_file, "w") as f:
+                    json.dump(output, f)
+                print(self.color_text(f"\nSaved checkpoint!\n", "93"))
 
         
         total_time = time.time() - start_time
