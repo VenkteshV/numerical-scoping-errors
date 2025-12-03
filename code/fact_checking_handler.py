@@ -29,7 +29,7 @@ class FactCheckingHandler:
         response, total_time = self.llm_handler.generate_response(self.system_prompt, user_prompt, on_token=on_tok)
         return response, total_time
     
-    def run(self, input_json_file: str, output_json_file: str, log=True, checkpoint=20) -> List[Dict[str, Any]]:
+    def run(self, input_json_file: str, output_json_file: str, log=True, checkpoint=20, golden=False) -> List[Dict[str, Any]]:
         """Runs fact-checking on all queries in a input json file"""
         if log:
             start_time = time.time()
@@ -69,7 +69,10 @@ class FactCheckingHandler:
             if log:
                 print(self.color_text(f"{i+start_index} Fact-checking: {query['claim']}", "93"))
 
-            response, total_time = self.fact_check(query['claim'], query['evidences'], query['examples'], on_tok=on_tok)
+            if golden: # if supposed to use the golden evidences
+                response, total_time = self.fact_check(query['claim'], [query['doc']], query['examples'], on_tok=on_tok)
+            else:
+                response, total_time = self.fact_check(query['claim'], query['evidences'], query['examples'], on_tok=on_tok)
             output['outputs'].append({'response': response, 'total_time': total_time})
 
             if log:

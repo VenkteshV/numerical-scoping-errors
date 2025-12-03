@@ -48,12 +48,12 @@ class PromptHandler:
         """Gets the string version of a list of evidences."""
         evidences = ""
         for idx, evidence in enumerate(evidence_list):
-            evidence += f"{idx+1}. \"{evidence}\"\n"
+            evidences += f"{idx+1}. \"{evidence}\"\n"
         return evidences
     
     def get_input_examples(self, fc_example_list: List[Dict[str, Any]]) -> str:
         """Gets the string version of a list of fact checking examples."""
         input_examples = ""
         for idx, fc_example in enumerate(fc_example_list):
-            input_examples += f"{idx+1}. [Claim]: \"{fc_example['claim']}\"\n[Evidences]: {self.get_evidences(fc_example['evidence_list'])}\n [Label]: {fc_example['label']}\n\n"
+            input_examples += f"{idx+1}. [Claim]: \"{fc_example['claim']}\"\n[Evidences]: {self.get_evidences(fc_example['evidence_list'])}\n[Label]: {fc_example['label']}\n\n"
         return input_examples
