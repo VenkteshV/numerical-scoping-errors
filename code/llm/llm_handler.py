@@ -84,4 +84,4 @@ class LLMHandler:
             return full_response, total_time
         except Exception as e:
             print(f"An error occurred: {e}")
-            return None
+            return f"ERROR: {e}", time.time() - start_time

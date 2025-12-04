@@ -26,10 +26,10 @@ class FactCheckingHandler:
     def fact_check(self, claim: str, evidence_list: List[str], fc_example_list: List[Dict[str, Any]], on_tok=None) -> str:
         """Runs a single fact-check query."""
         user_prompt = self.prompt_handler.get_user_message(claim, evidence_list, fc_example_list)
-        response, total_time = self.llm_handler.generate_response(self.system_prompt, user_prompt, on_token=on_tok)
+        response, total_time = self.llm_handler.generate_response(self.system_prompt, user_prompt, on_token=on_tok) 
         return response, total_time
     
-    def run(self, input_json_file: str, output_json_file: str, log=True, checkpoint=20, golden=False) -> List[Dict[str, Any]]:
+    def run(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=20, golden: bool=False) -> List[Dict[str, Any]]:
         """Runs fact-checking on all queries in a input json file"""
         if log:
             start_time = time.time()
