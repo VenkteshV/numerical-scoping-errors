@@ -12,6 +12,7 @@ class PromptHandler:
             task: str = "fc"):
 
         self.task = task
+        self.label_map = {"True": "SUPPORTS", "False": "REFUTES", "Conflicting": "CONFLICTING"}
 
     def get_system_message(self) -> str:
         """Gets the system message prompt."""
@@ -55,5 +56,6 @@ class PromptHandler:
         """Gets the string version of a list of fact checking examples."""
         input_examples = ""
         for idx, fc_example in enumerate(fc_example_list):
-            input_examples += f"{idx+1}. [Claim]: \"{fc_example['claim']}\"\n[Evidences]: {self.get_evidences(fc_example['evidence_list'])}\n[Label]: {fc_example['label']}\n\n"
+            label = fc_example['label'] if fc_example['label'] not in self.label_map else self.label_map[fc_example['label']]
+            input_examples += f"{idx+1}. [Claim]: \"{fc_example['claim']}\"\n[Evidences]: {self.get_evidences(fc_example['evidence_list'])}\n[Label]: {label}\n\n"
         return input_examples
