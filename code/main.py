@@ -14,7 +14,8 @@ def str2bool(v):
 
 
 def run(args):
-    fc_handler = FactCheckingHandler()
+    print(f"Task: {args.task}")
+    fc_handler = FactCheckingHandler(task=args.task)
     print(f"Gold: {args.gold}")
     fc_handler.run(args.input_json_file, args.output_json_file, log=args.log, golden=args.gold)
 
@@ -24,6 +25,7 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--output-json-file", dest="output_json_file", type=str, default=None, help="Path to json file to use for output")  
     parser.add_argument("-l", "--log", dest="log", type=str2bool, default=True, help="Whether to print logs")
     parser.add_argument("-g", "--gold", dest="gold", type=str2bool, default=False, help="Whether to use golden evidence or not")
+    parser.add_argument("-t", "--task", dest="task", type=str, default="fc", help="Task to perform (fc or num_qa)")  
     args = parser.parse_args()
 
     run(args)
