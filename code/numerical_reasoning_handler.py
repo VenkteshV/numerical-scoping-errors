@@ -1,24 +1,27 @@
 import os
+import sys
 import json
 import time
 from typing import List, Dict, Any
+from validation.validation_handler import ValidationHandler
 from llm.prompt_handler import PromptHandler
 from llm.llm_handler import LLMHandler
 
-class FactCheckingHandler:
+class NumericalReasoningHandler:
     """
-    Class that manages fact checking task.
+    Class that manages numerical reasoning tasks.
     
     Internal States:
-    - dataset: "quantemp" or "finqa"
+    - task: "fc" or "qa"
     """
     def __init__(
             self,
             task="fc"):
 
         self.task = task
-        self.prompt_handler = PromptHandler(task=task)
+        self.validation_handler = ValidationHandler(task=task)
         self.llm_handler = LLMHandler()
+        self.prompt_handler = PromptHandler(task=task)
         self.system_prompt = self.prompt_handler.get_system_message()
 
     def color_text(self, text: str, color_code: str) -> str:
@@ -42,15 +45,15 @@ class FactCheckingHandler:
             with open(output_json_file, "r") as f:
                 output_json = json.load(f)
 
-            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and output_json['input_json_file'] == input_json_file:
+            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'golden' in output_json and output_json['input_json_file'] == input_json_file and output_json['golden'] == golden:
                 if log:
                     print("Previous checkpoint loaded.")
                 output = output_json
             else:
                 print(f"ERROR! Output file exists and has results not matching current input file!")
-                return None
+                sys.exit()
         else:
-            output = {'input_json_file': input_json_file, 'outputs': []}
+            output = {'input_json_file': input_json_file, 'golden': golden, 'outputs': []}
         start_index = len(output['outputs'])
         if log:
             print(f"Starting from claim with index: {start_index}.")
@@ -102,3 +105,44 @@ class FactCheckingHandler:
             print(f"Processing finished in {total_time} seconds...")
 
         return output
+    
+    def validate(self, input_json_file: str, output_json_file: str, log: bool=True):
+        if log:
+            print(f"Starting validation...")
+
+        with open(input_json_file, "r") as f:
+            input_json = json.load(f)
+        
+        with open(output_json_file, "r") as f:
+            output_json = json.load(f)
+
+        final_output_dicts, n_invalid, n_not_started, n_incoherent_separators, n_incoherent_labels = self.validation_handler.parse_output(output_json, log=False)
+
+        n_valid, cf_matrix, accuracy, weighted_f1, macro_f1, per_class_f1s, per_taxonomy_f1s = self.validation_handler.validate_basic(input_json, final_output_dicts, log=log)
+
+        output_json['validation'] = {
+            'n_valid': n_valid,
+            'cf_matrix': cf_matrix,
+            'accuracy': accuracy,
+            'weighted_f1': weighted_f1,
+            'macro_f1': macro_f1,
+            'per_class_f1s': per_class_f1s,
+            'per_taxonomy_f1s': per_taxonomy_f1s,
+            'n_invalid': n_invalid,
+            'n_not_started': n_not_started,
+            'n_incoherent_separators': n_incoherent_separators,
+            'n_incoherent_labels': n_incoherent_labels,
+        }
+
+        try:
+            with open(output_json_file, "w") as f:
+                json.dump(output_json, f)
+        except Exception as e:
+            print(f"ERROR with saving validation results, will revert to previous. {e}")
+            output_json['validation'] = {}
+            with open(output_json_file, "w") as f:
+                json.dump(output_json, f)
+
+        if log:
+            print(f"Finished validation.")
+

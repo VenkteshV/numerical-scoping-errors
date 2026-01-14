@@ -1,0 +1,213 @@
+import re
+from typing import Dict, Any, List
+from sklearn.metrics import classification_report, confusion_matrix, f1_score, accuracy_score
+
+class ValidationHandler:
+    """
+    Class that does different types of validation for outputs.
+    
+    Internal States:
+    - task: "fc" or "qa"
+    """
+    def __init__(
+            self,
+            task: str = "fc"):
+
+        self.task = task
+        if task == "fc":
+            self.labels = ['True', 'False', 'Conflicting']
+            self.label_map = {"SUPPORTS": "True", "REFUTES": "False", "CONFLICTING": "Conflicting"}
+            self.separators = ["[Label]:", "[Justification]:"]
+            self.taxonomy_label_set = ['statistical', 'temporal', 'interval', 'comparison']
+        else:
+            self.labels = ["yes", "no"]
+            self.label_map = {"YES": "yes", "NO": "no"}
+            self.separators = ["[Final Answer]:", "[Justification]:"]
+            self.taxonomy_label_set = []
+
+    def parse_output_by_separator(self, output_response: str, log: bool):
+        """
+        Function to parse LLM output for a problem, splitting the response by separator
+        
+        Args:
+            output_response (str): the LLM response to be processed
+            log (bool): whether to return log statements or not
+
+        Returns:
+            output_dict (Dict[str,str]): for each separator the text that the response had
+            coherent_response (bool): whether the response contained text for all of the separators (indicates instruction following errors)
+            started_response (bool): whether there was any response for the problem (indicates context length errors)
+        """
+        leftover_response = output_response
+        output_dict = {separator: "" for separator in self.separators}
+        if output_response == "ERROR: 'choices'":
+            return output_dict, False, False
+
+        coherent_response = True
+        for i, separator in enumerate(self.separators):
+            if separator not in leftover_response:
+                if separator not in output_response: # if separator is not found at all
+                    if log:
+                        print(f"WARNING {separator} not found, incoherent output.")
+                    coherent_response = False
+                    continue
+                else:
+                    if log:
+                        print(f"WARNING {separator} not in correct order, incoherent output.")
+                    output_dict[separator] = leftover_response.split(separator)[1].strip()
+                    coherent_response = False
+                    continue
+            
+            # We know the separator is found, now split by it
+            splitted_leftover_response = leftover_response.split(separator) # results in a list where list[1] will contain the text directly after the separator
+            try: # try taking the response at index 1
+                leftover_response = splitted_leftover_response[1]
+                if i >= len(self.separators)-1: # if this is the last separator, the text does not need to be split further
+                    output_dict[separator] = leftover_response.strip()
+                else: # there is another separator after the current one
+                    next_splitted = leftover_response.split(self.separators[i+1]) # split by that next separator
+                    if len(next_splitted) <= 1: # if that separator doesn't exist, we can use the original unsplitted text
+                        output_dict[separator] = leftover_response.strip()
+                    else: # if it does exist, the list's length is greater than 1 so we take the list[0]th text as the text between the two separators
+                        output_dict[separator] = next_splitted[0].strip()
+            except KeyError as e:
+                if log:
+                    print(f"ERROR parsing {separator}, incoherent output.")
+                coherent_response = False
+
+        return output_dict, coherent_response, True
+    
+    def parse_output_label(self, label: str, log:bool):
+        """
+        Function to parse LLM output for a label, mapping to defined label_map
+        
+        Args:
+            label (str): the LLM label to be processed
+            log (bool): whether to return log statements or not
+
+        Returns:
+            final_label (str): final mapped version of the label
+            coherent_label (bool): whether the label could be mapped (indicates instruction following errors)
+        """
+        # Remove trailing/beginning ()s, []s, **s, or whitespace
+        # Remove common wrappers like quotes/brackets
+        # Collapse internal whitespace
+        m_label = re.sub(r"\s+", "", label)
+        m_label = re.sub(r'^[\s\[\]\(\)\{\}\'"`*]+', "", m_label)
+        m_label = re.sub(r'[\s\[\]\(\)\{\}\'"`*]+$', "", m_label)
+
+        final_label = ""
+        coherent_label = True
+        if m_label in self.label_map:
+            final_label = self.label_map[m_label]
+        else:
+            if log:
+                print(f"Unknown label '{label}' modified to '{m_label}'.")
+            coherent_label = False
+
+        return final_label, coherent_label
+    
+    def parse_output(self, output_json: Dict[str, Any], log: bool):
+        """
+        Function to parse LLM output, returning final processed labels, justifications, and invalidity flags
+        
+        Args:
+            output_json (Dict[str,Any]): the LLM output to be processed
+            log (bool): whether to return log statements or not
+
+        Returns:
+            final_output_dicts (List[Dict]): final output dicts for each output
+            n_invalid (int): how many responses were unprocessable due to some issue
+            n_not_started (int): how many responses were unprocessasble due to the LLM not processing in the first place: context length issues
+            n_incoherent_separators (int): number of responses that were unprocessable due to the separators not being used properly
+            n_incoherent_labels (int): number of responses that were unprocessable due to erroneous labels not matching label_map
+        """
+        # First, split each response by defined separators, keeping track of errors
+        output_dicts = list()
+        n_incoherent_separators = 0 # number of responses that were unprocessable due to erroneous separators in the response
+        n_not_started = 0 # the number of resopnses that were unprocessable due to the LLM never returning a response (context length errors)
+        for i in range(len(output_json['outputs'])):
+            output_dict, coherent_response, started_response = self.parse_output_by_separator(output_json['outputs'][i]['response'], log=log)
+            
+            if not started_response: # if the reponse was never started
+                n_not_started += 1
+
+            if started_response and not coherent_response: # if the response was started but not coherent
+                n_incoherent_separators += 1
+
+            output_dict['coherent_separators'] = coherent_response
+            output_dict['started_response'] = started_response
+            output_dicts.append(output_dict)
+
+        # Next, process the label of each response, keeping track of label errors
+        n_incoherent_labels = 0 # number of responses that were unprocessable due to erroneous labels in the response (outside of separator/starting errors)
+        final_labels = []
+        for output_dict in output_dicts:
+            label = output_dict[self.separators[0]] # depends on the task
+            final_label, coherent_label = self.parse_output_label(label, log=log)
+
+            if output_dict['started_response'] and not coherent_label and output_dict['coherent_separators']: # if the response was started, the separators were coherent, but the label was incoherent (indicates errors with label processing specifically)
+                n_incoherent_labels += 1
+
+            output_dict['label'] = final_label
+            output_dict['coherent_label'] = coherent_label
+
+        # Finally, finalize the invalid responses and create the final processed output dictionary
+        n_invalid = 0 # the number of responses that were unprocessable for some reason or another
+        final_output_dicts = list()
+        for output_dict in output_dicts:
+            final_output_dict = {'label': output_dict['label'], 'justification': output_dict[self.separators[1]]}
+            if output_dict['coherent_separators'] and output_dict['coherent_label'] and output_dict['started_response']:
+                final_output_dict['valid_response'] = True
+            else:
+                final_output_dict['valid_response'] = False
+                n_invalid += 1
+            final_output_dicts.append(final_output_dict)
+        
+        return final_output_dicts, n_invalid, n_not_started, n_incoherent_separators, n_incoherent_labels
+    
+    def validate_basic(self, input_json: List[Dict[str, Any]], output_dicts: List[Dict[str, Any]], log: bool):
+
+        labels = list()
+        predictions = list()
+        for output_dict, input_dict in zip(output_dicts, input_json):
+            if output_dict['valid_response']: # include only the valid outputs
+                labels.append(input_dict['label'])
+                predictions.append(output_dict['label'])
+
+        if log:
+            print(f"Excluded {len(input_json) - len(labels)} invalid responses. Using {len(labels)} valid responses.\n")
+
+            print(f"Classification Report:")
+            print(classification_report(labels, predictions, labels = self.labels, target_names = self.labels, digits=4))
+
+        cf_matrix = confusion_matrix(labels, predictions, labels=self.labels)
+
+        accuracy = accuracy_score(labels, predictions)
+
+        weighted_f1 = f1_score(labels, predictions, average='weighted')
+        macro_f1 = f1_score(labels, predictions, average='macro')
+        per_class_f1s = dict(zip(self.labels, f1_score(labels, predictions, labels=self.labels, average=None).tolist()))
+
+        # Compute per taxonomy_label f1s
+
+        taxonomy_labels = [input_dict['taxonomy_label'] for input_dict in input_json]
+        per_taxonomy_f1s = {}
+        for taxonomy_label in self.taxonomy_label_set:
+            labels_t = [label for tax, label in zip(taxonomy_labels, labels) if tax == taxonomy_label]
+            predictions_t = [pred for tax, pred in zip(taxonomy_labels, predictions) if tax == taxonomy_label]
+
+            weighted_f1_t = f1_score(labels_t, predictions_t, average='weighted')
+            macro_f1_t = f1_score(labels_t, predictions_t, average='macro')
+
+            per_taxonomy_f1s[taxonomy_label] = {'weighted_f1': weighted_f1_t, 'macro_f1': macro_f1_t}
+
+        if log:
+            print(f"Confusion Matrix:\n{cf_matrix}\n")
+            print(f"Accuracy: {accuracy}\n")
+            print(f"Weighted-F1: {weighted_f1}")
+            print(f"Macro-F1: {macro_f1}\n")
+            print(f"Per-Class F1s: {per_class_f1s}")
+            print(f"Per-Taxonomy F1s: {per_taxonomy_f1s}")
+
+        return len(labels), cf_matrix.tolist(), accuracy, weighted_f1, macro_f1, per_class_f1s, per_taxonomy_f1s
