@@ -1,4 +1,5 @@
 import re
+from math import isclose
 from typing import Dict, Any, List
 from sklearn.metrics import classification_report, confusion_matrix, f1_score, accuracy_score
 
@@ -25,6 +26,65 @@ class ValidationHandler:
             self.separators = ["[Final Answer]:", "[Justification]:"]
             self.taxonomy_label_set = []
 
+    def _clean_num(self, text: str):
+        """
+        Function to remove erroneous characters from number reponses
+
+        Args:
+            text (str): text to remove characters from
+
+        Returns:
+            text (str): cleaned text
+        """
+        text = text.replace("$", "")
+        text = text.replace("%", "")
+        text = text.replace(",", "")
+        return text
+    
+    def _extract_num_from_str(self, answer: str):
+        """
+        Function to extract a number from a string answer
+
+        Args:
+            answer (str): answer to parse
+
+        Returns:
+            num (None, float, int): the parsed number
+        """
+        s = self._clean_num(answer)
+        r_num = r"([+-]?\d+(\.\d+)?)|([+-]?\.\d+)"
+        groups = re.findall(r_num, s)
+        if len(groups) == 0:
+            return None
+        num = groups[-1][0]
+        if num == '':
+            return None
+        if '.' in num:
+            return float(num)
+        return int(num)
+    
+    def _equal_numbers(self, prediction: str, label: str, log: bool):
+        """
+        Function to compare two numbers represented as strings
+
+        Args:
+            prediction (str): predicted number string
+            label (str): ground truth number string
+            log (bool): whether to print log statements
+        """
+        if not prediction or 'None' in prediction:
+            return False
+        else:
+            try:
+                if isclose(abs(round(float(label), 3)), abs(round(float(prediction), 3)), rel_tol=0.02):
+                    return True
+                if round(abs(float(label)), 1) == round(abs(float(prediction)), 1):
+                    return True
+            except Exception as e:
+                if log:
+                    print(f"ERROR processing label or prediction: {label} {prediction} {e}")
+            return False
+    
     def parse_output_by_separator(self, output_response: str, log: bool):
         """
         Function to parse LLM output for a problem, splitting the response by separator
@@ -54,7 +114,7 @@ class ValidationHandler:
                 else:
                     if log:
                         print(f"WARNING {separator} not in correct order, incoherent output.")
-                    output_dict[separator] = leftover_response.split(separator)[1].strip()
+                    output_dict[separator] = output_response.split(separator)[1].strip()
                     coherent_response = False
                     continue
             
@@ -101,9 +161,18 @@ class ValidationHandler:
         if m_label in self.label_map:
             final_label = self.label_map[m_label]
         else:
-            if log:
-                print(f"Unknown label '{label}' modified to '{m_label}'.")
-            coherent_label = False
+            if self.task == "qa":
+                # Check for numbers
+                num = self._extract_num_from_str(m_label)
+                if not num:
+                    if log:
+                        print(f"Unknown numeric label '{label}' modified to '{num}'.")
+                    coherent_label = False
+                final_label = self._clean_num(str(num)) # back to a string
+            else:
+                if log:
+                    print(f"Unknown label '{label}' modified to '{m_label}'.")
+                coherent_label = False
 
         return final_label, coherent_label
     
@@ -141,7 +210,6 @@ class ValidationHandler:
 
         # Next, process the label of each response, keeping track of label errors
         n_incoherent_labels = 0 # number of responses that were unprocessable due to erroneous labels in the response (outside of separator/starting errors)
-        final_labels = []
         for output_dict in output_dicts:
             label = output_dict[self.separators[0]] # depends on the task
             final_label, coherent_label = self.parse_output_label(label, log=log)
@@ -166,8 +234,23 @@ class ValidationHandler:
         
         return final_output_dicts, n_invalid, n_not_started, n_incoherent_separators, n_incoherent_labels
     
-    def validate_basic(self, input_json: List[Dict[str, Any]], output_dicts: List[Dict[str, Any]], log: bool):
+    def validate_classification(self, input_json: List[Dict[str, Any]], output_dicts: List[Dict[str, Any]], log: bool):
+        """
+        Validation for classification tasks such as numerical fact-checking.
 
+        Args:
+            input_json (List[Dict[str, Any]]): input that contains the ground truth answer and taxonomy label
+            output_dicts (List[Dict[str, Any]]): output dictionaries that contain the predicted answer and invalidity statistics
+
+        Returns:
+            n (int): number of responses used to calculate outcomes
+            cf_matrix (List[List]): confusion matrix of label distribution
+            accuracy (float): accuracy of responses
+            weighted_f1 (float): weighted f1 score of responses
+            macro_f1 (float): macro f1 score of responses
+            per_class_f1s (Dict[str, float]): per class f1 score of responses
+            per_taxonomy_f1s (Dict[str[Dict[str, float]]]): per taxonomy label weighted/macro f1 scores
+        """
         labels = list()
         predictions = list()
         for output_dict, input_dict in zip(output_dicts, input_json):
@@ -211,3 +294,49 @@ class ValidationHandler:
             print(f"Per-Taxonomy F1s: {per_taxonomy_f1s}")
 
         return len(labels), cf_matrix.tolist(), accuracy, weighted_f1, macro_f1, per_class_f1s, per_taxonomy_f1s
+    
+    def validate_exact_match(self, input_json: List[Dict[str, Any]], output_dicts: List[Dict[str, Any]], log: bool):
+        """
+        Validation for exact match tasks such as numerical QA.
+
+        Args:
+            input_json (List[Dict[str, Any]]): input that contains the ground truth answer
+            output_dicts (List[Dict[str, Any]]): output dictionaries that contain the predicted answer and invalidity statistics
+
+        Returns:
+            n (int): number of responses used to calculate outcomes
+            em_accuracy (float): accuracy of responses
+            n_invalid_ground_truth (int): number of ground truth labels that don't exist
+        """
+        n_invalid_ground_truth = 0
+        n_valid = 0
+        matches = 0
+        mismatches = 0
+        for output_dict, input_dict in zip(output_dicts, input_json):
+            if output_dict['valid_response']: # include only the valid outputs
+                n_valid += 1
+                label = self._clean_num(input_dict['answer'].lower())
+                if not label:
+                    n_invalid_ground_truth += 1
+                    continue
+                prediction = output_dict['label'].lower()
+
+                if 'yes' in label or 'no' in label:
+                    if label == prediction: # predicted yes/no correctly
+                        matches += 1
+                    else: # predicted yes/no incorrectly
+                        mismatches += 1
+                else:
+                    if self._equal_numbers(prediction, label, log=log): # numbers are equal (or close enough)
+                        matches += 1
+                    else: # numbers are unequal
+                        mismatches += 1
+
+        em_accuracy = matches / (mismatches + matches)
+
+        if log:
+            print(f"Excluded {len(input_json) - n_valid} invalid responses. Using {n_valid} valid responses.\n")
+
+            print(f"Exact match accuracy: {em_accuracy}")
+
+        return n_valid, em_accuracy, n_invalid_ground_truth

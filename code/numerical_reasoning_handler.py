@@ -78,7 +78,7 @@ class NumericalReasoningHandler:
                 if golden: # if supposed to use the golden evidences
                     response, total_time = self.process_query(query['claim'], [query['doc']], query['examples'], on_tok=on_tok)
                 else:
-                    response, total_time = self.process_query(query['claim'], query['evidences'], query['examples'], on_tok=on_tok)
+                    response, total_time = self.process_query(query['claim'], query['qrel_evidences'], query['examples'], on_tok=on_tok)
             else:
                 if log:
                     print(self.color_text(f"{i+start_index} Processing: {query['question']}", "93"))
@@ -118,21 +118,36 @@ class NumericalReasoningHandler:
 
         final_output_dicts, n_invalid, n_not_started, n_incoherent_separators, n_incoherent_labels = self.validation_handler.parse_output(output_json, log=False)
 
-        n_valid, cf_matrix, accuracy, weighted_f1, macro_f1, per_class_f1s, per_taxonomy_f1s = self.validation_handler.validate_basic(input_json, final_output_dicts, log=log)
+        if self.task == "fc":
+            # validate fc
+            n_valid, cf_matrix, accuracy, weighted_f1, macro_f1, per_class_f1s, per_taxonomy_f1s = self.validation_handler.validate_classification(input_json, final_output_dicts, log=log)
 
-        output_json['validation'] = {
-            'n_valid': n_valid,
-            'cf_matrix': cf_matrix,
-            'accuracy': accuracy,
-            'weighted_f1': weighted_f1,
-            'macro_f1': macro_f1,
-            'per_class_f1s': per_class_f1s,
-            'per_taxonomy_f1s': per_taxonomy_f1s,
-            'n_invalid': n_invalid,
-            'n_not_started': n_not_started,
-            'n_incoherent_separators': n_incoherent_separators,
-            'n_incoherent_labels': n_incoherent_labels,
-        }
+            output_json['validation'] = {
+                'n_valid': n_valid,
+                'cf_matrix': cf_matrix,
+                'accuracy': accuracy,
+                'weighted_f1': weighted_f1,
+                'macro_f1': macro_f1,
+                'per_class_f1s': per_class_f1s,
+                'per_taxonomy_f1s': per_taxonomy_f1s,
+                'n_invalid': n_invalid,
+                'n_not_started': n_not_started,
+                'n_incoherent_separators': n_incoherent_separators,
+                'n_incoherent_labels': n_incoherent_labels,
+            }
+        else:
+            # validate qa
+            n_valid, em_accuracy, n_invalid_ground_truth = self.validation_handler.validate_exact_match(input_json, final_output_dicts, log=log)
+
+            output_json['validation'] = {
+                'n_valid': n_valid,
+                'em_accuracy': em_accuracy,
+                'n_invalid': n_invalid,
+                'n_not_started': n_not_started,
+                'n_incoherent_separators': n_incoherent_separators,
+                'n_incoherent_labels': n_incoherent_labels,
+                'n_invalid_ground_truth': n_invalid_ground_truth,
+            }
 
         try:
             with open(output_json_file, "w") as f:

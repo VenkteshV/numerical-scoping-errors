@@ -28,7 +28,7 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--output-json-file", dest="output_json_file", type=str, default=None, help="Path to json file to use for output")  
     parser.add_argument("-l", "--log", dest="log", type=str2bool, default=True, help="Whether to print logs")
     parser.add_argument("-g", "--gold", dest="gold", type=str2bool, default=False, help="Whether to use golden evidence or not")
-    parser.add_argument("-t", "--task", dest="task", type=str, default="fc", help="Task to perform (fc or num_qa)")
+    parser.add_argument("-t", "--task", dest="task", type=str, default="fc", help="Task to perform (fc or qa)")
     parser.add_argument("-v", "--validation", dest="validation", type=str2bool, default=True, help="Whether to perform validation")
     args = parser.parse_args()
 
