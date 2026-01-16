@@ -15,7 +15,7 @@ def str2bool(v):
 
 def run(args):
     print(f"Task: {args.task}")
-    nr_handler = NumericalReasoningHandler(task=args.task)
+    nr_handler = NumericalReasoningHandler(task=args.task, platform=args.platform)
     print(f"Gold: {args.gold}")
     nr_handler.run(args.input_json_file, args.output_json_file, log=args.log, golden=args.gold)
     print(f"Validation: {args.validation}")
@@ -30,6 +30,7 @@ if __name__ == "__main__":
     parser.add_argument("-g", "--gold", dest="gold", type=str2bool, default=False, help="Whether to use golden evidence or not")
     parser.add_argument("-t", "--task", dest="task", type=str, default="fc", help="Task to perform (fc or qa)")
     parser.add_argument("-v", "--validation", dest="validation", type=str2bool, default=True, help="Whether to perform validation")
+    parser.add_argument("-p", "--platform", dest="platform", type=str, default="local", help="Which platform to perform inference on (local or delftblue)")
     args = parser.parse_args()
 
     run(args)

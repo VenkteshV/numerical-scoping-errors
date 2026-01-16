@@ -16,11 +16,20 @@ class NumericalReasoningHandler:
     """
     def __init__(
             self,
-            task="fc"):
+            task="fc",
+            platform="local"):
 
         self.task = task
+        self.platform = platform
+
+        if platform == "local":
+            from llm.llm_handler import LLMHandler
+            self.llm_handler = LLMHandler()
+        else:
+            from llm.llm_handler_delftblue import LLMHandler
+            self.llm_handler = LLMHandler()
+
         self.validation_handler = ValidationHandler(task=task)
-        self.llm_handler = LLMHandler()
         self.prompt_handler = PromptHandler(task=task)
         self.system_prompt = self.prompt_handler.get_system_message()
 
