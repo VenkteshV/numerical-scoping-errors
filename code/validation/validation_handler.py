@@ -1,4 +1,5 @@
 import re
+import json
 from math import isclose
 from typing import Dict, Any, List
 from sklearn.metrics import classification_report, confusion_matrix, f1_score, accuracy_score
@@ -340,3 +341,81 @@ class ValidationHandler:
             print(f"Exact match accuracy: {em_accuracy}")
 
         return n_valid, em_accuracy, n_invalid_ground_truth
+    
+    def parse_judge_output(self, output_json: Dict[str, Any], log: bool):
+        """
+        Validation for LLM-as-a-judge output detecting numerical failures.
+
+        Args:
+            output_json (Dict[str,Any]): the LLM output to be processed with judge outcomes
+            log (bool): whether to return log statements or not
+
+        Returns:
+            n_invalid (int): number of judge outcomes that were unparsable
+            n_correct (int): number of parsable judge outcomes that said predicted/gt labels matched
+            n_incorrect (int): number of parsable judge outcomes that said predicted/gt labels did not match
+            total (Dict[str, int]): number of total valid judge outcomes with detected n_numerical_scoping, n_arithmetic, and n_looping failures
+            incorrect (Dict[str, int]): number of incorrect valid judge outcomes with detected n_numerical_scoping, n_arithmetic, and n_looping failures
+            caused (Dict[str, int]): number of valid judge outcomes with detected n_numerical_scoping, n_arithmetic, and n_looping failures that caused the incorrectness
+        """
+        # Parse into jsons
+        n_invalid = 0
+        for o in output_json['judge']:
+            valid_json = True
+            response = o['response']
+            o['json'] = {}
+
+            try:
+                p_json = response[response.index('{'): response.rfind('}')+1]
+                j = json.loads(p_json)
+                o['json'] = j
+            except Exception as e:
+                valid_json = False
+                n_invalid += 1
+                if log:
+                    print(f"ERROR parsing json {e} with json {response}")
+            
+            o['valid_json'] = valid_json
+
+        # Get number with reasoning failures
+        n_correct = 0
+        n_incorrect = 0
+        total = {"n_numerical_scoping": 0, "n_arithmetic": 0, "n_looping": 0}
+        incorrect = {"n_numerical_scoping": 0, "n_arithmetic": 0, "n_looping": 0}
+        caused = {"n_numerical_scoping": 0, "n_arithmetic": 0, "n_looping": 0}
+        for o in output_json['judge']:
+            if not o['valid_json']: # skip invalid records
+                n_invalid += 1
+                continue
+            j = o['json']
+            try:
+                if j['failures']['numerical_scoping_error']['exists'].lower() == "yes":
+                    total['n_numerical_scoping'] += 1
+                if j['failures']['arithmetic_error']['exists'].lower() == "yes":
+                    total['n_arithmetic'] += 1
+                if j['failures']['infinite_loop']['exists'].lower() == "yes":
+                    total['n_looping'] += 1
+
+                if j['verdict_correct']:
+                    n_correct += 1
+                else:
+                    n_incorrect += 1
+                    if j['failures']['numerical_scoping_error']['exists'].lower() == "yes":
+                        incorrect['n_numerical_scoping'] += 1
+                    if j['failures']['arithmetic_error']['exists'].lower() == "yes":
+                        incorrect['n_arithmetic'] += 1
+                    if j['failures']['infinite_loop']['exists'].lower() == "yes":
+                        incorrect['n_looping'] += 1
+
+                    if j['failures']['numerical_scoping_error']['exists'].lower() == "yes" and j['failures']['numerical_scoping_error']['led_to_incorrect_answer'].lower() == "yes":
+                        caused['n_numerical_scoping'] += 1
+                    if j['failures']['arithmetic_error']['exists'].lower() == "yes" and j['failures']['arithmetic_error']['led_to_incorrect_answer'].lower() == "yes":
+                        caused['n_arithmetic'] += 1
+                    if j['failures']['infinite_loop']['exists'].lower() == "yes" and j['failures']['infinite_loop']['led_to_incorrect_answer'].lower() == "yes":
+                        caused['n_looping'] += 1
+            except Exception as e:
+                o['valid_json'] = False # mark json as invalid
+                n_invalid += 1
+                if log:
+                    print(f"ERROR with parsing {e} with json {j}")
+        n_invalid, n_correct, n_incorrect, total, incorrect, caused

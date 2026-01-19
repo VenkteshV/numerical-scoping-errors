@@ -21,6 +21,11 @@ def run(args):
     print(f"Validation: {args.validation}")
     if args.validation:
         nr_handler.validate(args.input_json_file, args.output_json_file, log=args.log)
+    print(f"Judge: {args.judge}")
+    if args.judge:
+        nr_handler.judge(args.input_json_file, args.output_json_file, log=args.log, golden=args.gold)
+    if args.validation:
+        nr_handler.validate_judge(args.input_json_file, args.output_json_file, log=args.log)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fact-checking")
@@ -31,6 +36,7 @@ if __name__ == "__main__":
     parser.add_argument("-t", "--task", dest="task", type=str, default="fc", help="Task to perform (fc or qa)")
     parser.add_argument("-v", "--validation", dest="validation", type=str2bool, default=True, help="Whether to perform validation")
     parser.add_argument("-p", "--platform", dest="platform", type=str, default="local", help="Which platform to perform inference on (local or delftblue)")
+    parser.add_argument("-j", "--judge", dest="judge", type=str2bool, default=False, help="Whether to perform LLM-as-a-judge on the outputs of the main inference loop")
     args = parser.parse_args()
 
     run(args)
