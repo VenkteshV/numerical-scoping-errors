@@ -385,7 +385,6 @@ class ValidationHandler:
         caused = {"n_numerical_scoping": 0, "n_arithmetic": 0, "n_looping": 0}
         for o in output_json['judge']:
             if not o['valid_json']: # skip invalid records
-                n_invalid += 1
                 continue
             j = o['json']
             try:
@@ -418,4 +417,10 @@ class ValidationHandler:
                 n_invalid += 1
                 if log:
                     print(f"ERROR with parsing {e} with json {j}")
-        n_invalid, n_correct, n_incorrect, total, incorrect, caused
+
+        if log:
+            print(f"N_invalid: {n_invalid}; N_correct: {n_correct}; N_incorrect: {n_incorrect}")
+            print(f"Total: {total}")
+            print(f"Incorrect: {incorrect}")
+            print(f"Caused: {caused}")
+        return n_invalid, n_correct, n_incorrect, total, incorrect, caused

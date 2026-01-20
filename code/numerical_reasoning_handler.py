@@ -304,7 +304,7 @@ class NumericalReasoningHandler:
             print("ERROR: no LLM-as-a-judge returns to be parsed")
             return
 
-        n_invalid, n_correct, n_incorrect, total, incorrect, caused = self.validation_handler.parse_judge_output(output_json, log=False)
+        n_invalid, n_correct, n_incorrect, total, incorrect, caused = self.validation_handler.parse_judge_output(output_json, log=log)
 
         output_json['judge_validation'] = {
             'n_invalid': n_invalid,

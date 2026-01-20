@@ -57,8 +57,8 @@ FAILURE TYPES
 - The reasoning combines quantities incorrectly (wrong addition/subtraction/multiplication/division), miscomputes differences/percent changes, misapplies rounding, double-counts, or performs invalid aggregation.
 
 3) Infinite loops / no final verdict:
-The reasoning trace fails to terminate or does not produce a final label due to repetitive reasoning.
-- If a final label is present and the trace ends cleanly, mark NO.
+- The reasoning trace fails to terminate or does not produce a final label due to repetitive reasoning.
+- If a final label is present and the trace ends cleanly, mark NO. If there is no [Label] block, mark YES.
 
 CAUSALITY RULE
 For each failure type, you must decide whether it contributed to an incorrect final answer:
@@ -115,8 +115,8 @@ You will be given:
 1) A question
 2) Evidence used for answering
 3) A reasoning trace produced by an LLM
-4) The LLM's predicted answer (YES / NO / some number), if present
-5) The LLM's justification, if present
+4) The LLM's predicted answer ([Final Answer]: YES / NO / some number), if present
+5) The LLM's justification ([Justification]: some text), if present
 6) The ground-truth answer (YES / NO / some number)
 
 Your task is to determine whether the reasoning trace contains any of the following failure types and, if so, whether they contributed to an incorrect final prediction.
@@ -132,8 +132,8 @@ FAILURE TYPES
 - The reasoning combines quantities incorrectly (wrong addition/subtraction/multiplication/division), miscomputes differences/percent changes, misapplies rounding, double-counts, or performs invalid aggregation.
 
 3) Infinite loops / no final verdict:
-The reasoning trace fails to terminate or does not produce a final answer due to repetitive reasoning.
-- If a final answer is present and the trace ends cleanly, mark NO.
+- The reasoning trace fails to terminate cleanly or does not produce a final answer due to repetitive reasoning.
+- If a final answer is present and the trace ends cleanly with [Final Answer]/[Justification] blocks, mark NO. If there is no [Final Answer] block, mark YES. The [Ground Truth Answer] block does not count as a [Final Answer] block.
 
 CAUSALITY RULE
 For each failure type, you must decide whether it contributed to an incorrect final answer:
