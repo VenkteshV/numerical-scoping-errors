@@ -103,7 +103,7 @@ RULES
 Your task:
     1. Carefully analyze and decompose the important details from the question.
     2. Reason through the evidence in the table and text step-by-step, looking for information to help you answer the question.
-    3. Finally, output the final answer to the question in numerical or binary form without extra text.
+    3. Finally, output the final answer to the question in numerical or binary form without extra text. Answer will be marked correct if within 0.1 of correct answer, with or without a percentage sign.
 Response Format:
 - [Final Answer]: (YES, NO, or some number)
 - [Justification]: The reasoning steps used that led to your final answer.
