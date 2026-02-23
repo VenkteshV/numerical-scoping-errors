@@ -2,11 +2,11 @@
 
 ## Set-up Instructions
 
-#### 1. Clone this repository
+### 1. Clone this repository
 
-#### 2. Create the main virtual environment and install dependencies
+### 2. Create the main virtual environment and install dependencies
 
-#### 3. Set up the CoreNLP service
+### 3. Set up the CoreNLP service
 
   1. Install a Java Development Kit if not already installed (I installed version 25.0.2 from Oracle [here](https://www.oracle.com/java/technologies/downloads/#jdk25-windows))
 
@@ -31,19 +31,17 @@
 
   The CoreNLP server is now started up.
 
-  #### 4. Set up the QA_NatVer service
+  ### 4. Set up the QA_NatVer service
 
   1. Set up the [`QA_NatVer` repository](https://github.com/Raldir/QA-NatVer/tree/public_repo) as a submodule
 
   Run: `git submodule update --init --recursive`
 
-  Note: if you run into issues
-
   2. Download the required [model](https://drive.google.com/file/d/1fSDA7rlp39tEDAehoN8EeybEf9wSqEBo/view?usp=sharing) and [aligner](https://drive.google.com/file/d/1-391W3NKTlJLMpjUwjCv03H1Qk0ygWzC/view?usp=sharing) as instructed in the README.
 
   Place the model in the `third_party/QA-NatVer/models/BART0` folder. Should contain a file called: `finish.pt`
   
-  Place the aligner in the `third_party/QA-NatVer/models/awesomealign` folder. Should be called: `default_gold_no_nei_few_shot_False_4000`
+  Place the aligner in the `third_party/QA-NatVer/models/awesomealign` folder. Should be a directory called: `default_gold_no_nei_few_shot_False_4000`
 
   3. In a new CLI, create an entirely new virtual environment according to `QA-NatVer`'s README
 
@@ -52,7 +50,7 @@
   conda activate qa_natver
   ```
 
-  Then install dependencies with: `python -m pip install -e .`
+  Then install dependencies with: `python -m pip install -e .` and `python -m pip install -U fastapi uvicorn pydantic==1.10.26`
 
   Verify working installation with: 
   ```
@@ -73,13 +71,40 @@
 
   4. Verify that the repository works with a toy example
 
-  Run the following command which takes `data/test.jsonl` as input: 
+  Inside the `third_party/QA-NatVer` repository, run the following command which takes `data/test.jsonl` as input: 
   ```python -m src.run -c configs/alignment/dynamic_awesomealign_bert_mwmf_coarse_finetuned_4000_gold_no_nei_only_retrieval_5_ev.json+configs/dataset/fever.json+configs/environment/local_saving.json+configs/model/bart0_trained.json+configs/samples/32.json -k exp_name=fever/environment_local_saving_model_bart0_trained_alignment_dynamic_awesomealign_bert_mwmf_coarse_finetuned_4000_gold_no_nei_only_retrieval_5_ev_samples_32/0 seed=0
   ```
 
   Note: if you run into issues relating to pickling and `collate_fn`, try setting `"num_workers": 8` to `"num_workers": 0` in `QA-NatVer/src/utils/Config.py`
 
   5. Finally, host the QA-NatVer service
+
+  Inside the `third_party/QA-NatVer` repository, set the `PYTHONPATH` to allow uvicorn to find the `qa_natver_server.py` file: `set PYTHONPATH=..;%PYTHONPATH%`
+
+  Then start the uvicorn server: `python -m uvicorn qa_natver_server:app --host 127.0.0.1 --port 8008 --reload`
+
+  Verify the server with a simple example (first for Powershell, second for bat): 
+  ```{shell}
+  $body = @{
+    items = @(
+      @{
+        id = 1
+        claim = "The evidence mentions the judiciary's allocation as Ksh554 million"
+        evidence = @("with regard to the judicial governance of the judiciary, the superior billion, with matters settled having a value of ksh554 million.")
+      }
+    )
+  } | ConvertTo-Json -Depth 5
+  
+  Invoke-RestMethod -Method Post `
+    -Uri "http://127.0.0.1:8008/infer" `
+    -ContentType "application/json" `
+    -Body $body
+  ```
+  ```{bat}
+  curl -X POST "http://127.0.0.1:8008/infer" ^
+    -H "Content-Type: application/json" ^
+    -d "{\"items\":[{\"id\":1,\"claim\":\"The evidence mentions the judiciary's allocation as Ksh554 million\",\"evidence\":[\"with regard to the judicial governance of the judiciary, the superior billion, with matters settled having a value of ksh554 million.\"]}]}"
+  ```
 
 
 
