@@ -1,0 +1,4 @@
+[submodule "code/third_party/QA-NatVer"]
+	path = code/third_party/QA-NatVer
+	url = https://github.com/Raldir/QA-NatVer.git
+	branch = public_repo
