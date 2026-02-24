@@ -1,7 +1,7 @@
 """Quantity segmenter that returns the quantitiative segments within a claim
 
     'cd D:\Programs\stanford-corenlp\stanford-corenlp-4.5.10'
-    First run CoreNLP server with: 'java -mx4g -cp "*" edu.stanford.nlp.pipeline.StanfordCoreNLPServer -port 9000 -timeout 15000'
+    First run CoreNLP server with: 'java -mx4g -cp "*" edu.stanford.nlp.pipeline.StanfordCoreNLPServer -port 9000 -timeout 60000'
 
     Returns:
         List[str]: List of quantitative segments
@@ -306,6 +306,48 @@ class Segmenter():
         return text
 
 
+    # def atomicize_with_openie(self, sentence_json: dict, quantity_text: str, quantity: str) -> str | None:
+    #     """
+    #     Returns an atomic sentence for a given quantity_text using CoreNLP OpenIE.
+    #     Picks the shortest triple that contains the quantity_text in subj/re/obj.
+    #     """
+
+    #     openie_triples = sentence_json.get("openie", [])
+    #     if not openie_triples:
+    #         return None
+    
+    #     q = quantity_text.strip()
+    #     candidates = []
+    #     for t in openie_triples:
+    #         subj = (t.get("subject") or "").strip()
+    #         rel  = (t.get("relation") or "").strip()
+    #         obj  = (t.get("object") or "").strip()
+    #         triple_text = f"{subj} {rel} {obj}".strip()
+        
+    #         if q and (q in subj or q in rel or q in obj or q in triple_text):
+    #             candidates.append((len(triple_text), subj, rel, obj))
+        
+    #     if not candidates:
+    #         q = quantity.strip()
+    #         # Try searching for quantity instead
+    #         for t in openie_triples:
+    #             subj = (t.get("subject") or "").strip()
+    #             rel  = (t.get("relation") or "").strip()
+    #             obj  = (t.get("object") or "").strip()
+    #             triple_text = f"{subj} {rel} {obj}".strip()
+    #             if q and (q in subj or q in rel or q in obj or q in triple_text):
+    #                 candidates.append((len(triple_text), subj, rel, obj))
+
+    #     if not candidates:
+    #         return None
+        
+    #     print(f"CANDIDATES: {candidates}")
+    #     candidates.sort(key=lambda x: x[0])
+    #     _, subj, rel, obj = candidates[0]
+
+    #     atom = f"{subj} {rel} {obj}".strip()
+    #     return atom
+
     def segment(self, text) -> Tuple[List[List[str]], List[Node]]:
         '''Extracts and returns all quantity mentions in a text.
         Quantity mentions are defined as least ancestor noun phrases
@@ -319,9 +361,9 @@ class Segmenter():
 
         noun_phrases_all, quantity_phrases, quantity_natural_language = [], [], []
         parse = self.nlp.annotate(text, properties={
-            'annotators': 'parse',
+            'annotators': 'parse',# "tokenize,ssplit,pos,lemma,depparse,parse,natlog,openie",
             'outputFormat': 'json',
-            'timeout': 10000,
+            'timeout': 60000,
         })
         
         # pycorenlp may return a raw JSON string; convert it.
@@ -432,8 +474,17 @@ class Segmenter():
                             else:
                                 # preserve L-R order
                                 stack.extend(reversed(n.children))
-                        quantity = " ".join(leaf_tokens)
-                        quantity_natural_language.append({'quantity_text': quantity_text, 'quantity': quantity, 'sentence_idx': i, "sentence_text": sent_text})
+                        quantity = " ".join(leaf_tokens).replace(",", "") # get rid of mid-number commas
+                        
+                        # atomic = self.atomicize_with_openie(sentence, quantity_text, quantity)
+                        
+                        quantity_natural_language.append({
+                            'quantity_text': quantity_text, 
+                            'quantity': quantity, 
+                            'sentence_idx': i, 
+                            "sentence_text": sent_text,
+                            # "atomic_sentence": atomic
+                        })
 
         return quantity_phrases, noun_phrases_all, quantity_natural_language
 
