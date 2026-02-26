@@ -305,49 +305,6 @@ class Segmenter():
         text = re.sub(r"\s+", " ", text).strip()
         return text
 
-
-    # def atomicize_with_openie(self, sentence_json: dict, quantity_text: str, quantity: str) -> str | None:
-    #     """
-    #     Returns an atomic sentence for a given quantity_text using CoreNLP OpenIE.
-    #     Picks the shortest triple that contains the quantity_text in subj/re/obj.
-    #     """
-
-    #     openie_triples = sentence_json.get("openie", [])
-    #     if not openie_triples:
-    #         return None
-    
-    #     q = quantity_text.strip()
-    #     candidates = []
-    #     for t in openie_triples:
-    #         subj = (t.get("subject") or "").strip()
-    #         rel  = (t.get("relation") or "").strip()
-    #         obj  = (t.get("object") or "").strip()
-    #         triple_text = f"{subj} {rel} {obj}".strip()
-        
-    #         if q and (q in subj or q in rel or q in obj or q in triple_text):
-    #             candidates.append((len(triple_text), subj, rel, obj))
-        
-    #     if not candidates:
-    #         q = quantity.strip()
-    #         # Try searching for quantity instead
-    #         for t in openie_triples:
-    #             subj = (t.get("subject") or "").strip()
-    #             rel  = (t.get("relation") or "").strip()
-    #             obj  = (t.get("object") or "").strip()
-    #             triple_text = f"{subj} {rel} {obj}".strip()
-    #             if q and (q in subj or q in rel or q in obj or q in triple_text):
-    #                 candidates.append((len(triple_text), subj, rel, obj))
-
-    #     if not candidates:
-    #         return None
-        
-    #     print(f"CANDIDATES: {candidates}")
-    #     candidates.sort(key=lambda x: x[0])
-    #     _, subj, rel, obj = candidates[0]
-
-    #     atom = f"{subj} {rel} {obj}".strip()
-    #     return atom
-
     def segment(self, text) -> Tuple[List[List[str]], List[Node]]:
         '''Extracts and returns all quantity mentions in a text.
         Quantity mentions are defined as least ancestor noun phrases
@@ -475,9 +432,7 @@ class Segmenter():
                                 # preserve L-R order
                                 stack.extend(reversed(n.children))
                         quantity = " ".join(leaf_tokens).replace(",", "") # get rid of mid-number commas
-                        
-                        # atomic = self.atomicize_with_openie(sentence, quantity_text, quantity)
-                        
+                                                
                         quantity_natural_language.append({
                             'quantity_text': quantity_text, 
                             'quantity': quantity, 
@@ -487,6 +442,162 @@ class Segmenter():
                         })
 
         return quantity_phrases, noun_phrases_all, quantity_natural_language
+
+    def _first_float(self, s: str):
+        """
+        Returns the first float in a string.
+        """
+        # handles "50", "50.2", "1,200.5"
+        m = re.search(r"(\d[\d,]*\.?\d*)", s)
+        if not m:
+            return None
+        return float(m.group(1).replace(",", ""))
+
+    def _words_to_int(self, lemmas):
+        """
+        Very small english number parser: enough for "two", "twenty one", "one hundred", etc.
+        """
+        U = {
+            "zero":0,"one":1,"two":2,"three":3,"four":4,"five":5,"six":6,"seven":7,"eight":8,"nine":9,
+            "ten":10,"eleven":11,"twelve":12,"thirteen":13,"fourteen":14,"fifteen":15,"sixteen":16,
+            "seventeen":17,"eighteen":18,"nineteen":19,
+            "twenty":20,"thirty":30,"forty":40,"fifty":50,"sixty":60,"seventy":70,"eighty":80,"ninety":90,
+        }
+        S = {"hundred":100, "thousand":1000, "million":1000000, "billion":1000000000, "trillion":1000000000000}
+
+        total, cur, seen = 0, 0, False
+        for w in lemmas:
+            if w in U:
+                cur += U[w]; seen = True
+            elif w == "hundred" and seen:
+                cur *= 100
+            elif w in S and w != "hundred" and seen:
+                total += (cur if cur else 1) * S[w]
+                cur = 0
+            else:
+                # stop once number phrase ends (keeps it conservative)
+                if seen:
+                    break
+        return (total + cur) if seen else None
+
+    def _strip_numberish_tokens(self, lemmas):
+        """
+        Remove approx words, digits, and number words; what remains is the "unit-ish" tail
+        """
+        NUM_WORDS = {
+            "zero","one","two","three","four","five","six","seven","eight","nine","ten","eleven","twelve","thirteen",
+            "fourteen","fifteen","sixteen","seventeen","eighteen","nineteen","twenty","thirty","forty","fifty","sixty",
+            "seventy","eighty","ninety","hundred","thousand","million","billion","trillion"
+        }
+        return [l for l in lemmas if not re.fullmatch(r"\d+(\.\d+)?", l) and l not in NUM_WORDS]
+
+
+    def normalize_quantity_phrase(self, phrase: str):
+        """
+        Normalizes a quanitty phrase extracting percent, monetary, and numerical metadata.
+
+        Args:
+            phrase (str): numerical text to extract from
+        """
+        APPROX_WORDS = {"about", "around", "approx", "approximately", "roughly", "nearly", "circa", "~", "basically"}
+        SCALE = {
+            "hundred": 1e2,
+            "thousand": 1e3, "k": 1e3,
+            "million": 1e6, "m": 1e6,
+            "billion": 1e9, "bn": 1e9,
+            "trillion": 1e12, "tn": 1e12,
+        }
+
+        ann = self.nlp.annotate(
+            phrase,
+            properties={
+                "annotators": "tokenize,ssplit,pos,lemma,ner",
+                "outputFormat": "json",
+            },
+        )
+
+        if isinstance(ann, str):
+            try:
+                ann = json.loads(ann)
+            except json.JSONDecodeError as e:
+                raise RuntimeError(
+                    "CoreNLP did not return valid JSON. "
+                    "The server likely returned an error message instead.\n\n"
+                    f"Raw response (first 1000 chars):\n{ann[:1000]}"
+                ) from e
+        
+        toks = ann["sentences"][0]["tokens"]
+        words = [t["word"] for t in toks]
+        lemmas = [t.get("lemma", t["word"]).lower() for t in toks]
+        ners = [t.get("ner", "O") for t in toks]
+
+        approx = any(l in APPROX_WORDS for l in lemmas)
+
+        # Determine type using NER if possible
+        if "PERCENT" in ners or "%" in words:
+            qtype = "PERCENT"
+            unit = "%"
+        elif "MONEY" in ners:
+            qtype = "MONEY"
+            unit = "MONEY"  # you can refine currency detection if needed
+        elif "NUMBER" in ners or any(re.search(r"\d", w) for w in words):
+            qtype = "NUMBER"
+            unit = "NUMBER"
+        else:
+            qtype = "OTHER"
+            unit = None
+
+        # Numeric value parsing (simple, but works well for your examples)
+        value = self._first_float(phrase)
+
+        # Apply scale words like "million"
+        if value is not None:
+            for l in lemmas:
+                if l in SCALE:
+                    value *= SCALE[l]
+                    break
+
+        # If no float found
+        if value is None: # try natural language parsing
+            value = self._words_to_int(lemmas)
+
+        # Write out tail for unknown types
+        tail = " ".join(self._strip_numberish_tokens([l for l in lemmas if l not in APPROX_WORDS])).strip()
+
+        # Special: percent sign should keep base value as the percent number (50 for 50%)
+        # (If you prefer 0.5, divide by 100 here consistently.)
+        return {"type": qtype, "value": value, "unit": unit, "approx": approx, "tail": tail, "text": phrase}
+    
+    def typed_quantity_similarity(self, a, b, rel_tol_strict=0.01, rel_tol_approx=0.05) -> bool:
+        """
+        Returns whether two quantities are similar according to metadata.
+
+        Args:
+            a (Dict): gotten from normalize_quantity_phrase()
+            b (Dict): gotten from normalize_quantity_phrase()
+            rel_tol_strict (float): relative difference cut-off for non-approximate numbers
+            rel_tol_approx (float): relative difference cut-off for approximate numbers
+        """
+        # hard gate on type/unit
+        if a["type"] != b["type"]:
+            return False
+        if a["type"] == "OTHER": # natural language queries
+            if a["value"] is None or b["value"] is None:
+                return False
+            if a.get("tail","") != b.get("tail",""):
+                return False
+            return a["value"] == b["value"]
+
+        if a["value"] is None or b["value"] is None:
+            return False
+
+        rel_err = abs(a["value"] - b["value"]) / max(abs(a["value"]), abs(b["value"]), 1e-12)
+
+        tol = rel_tol_approx if (a["approx"] or b["approx"]) else rel_tol_strict
+        if rel_err > tol:
+            return False
+
+        return True
 
 
 if __name__ == "__main__":
