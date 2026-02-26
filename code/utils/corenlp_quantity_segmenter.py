@@ -304,6 +304,27 @@ class Segmenter():
         # Extra whitespace
         text = re.sub(r"\s+", " ", text).strip()
         return text
+    
+    def convert_finqa_table_row_to_text(self, table_header: List[str], table_row: List[str]) -> str:
+        """
+        Convert a finqa table row to a natural language sentence.
+        Based on https://github.com/czyssrs/FinQA/blob/main/code/utils/general_utils.py
+
+        Args:
+            table_header (List[str]): header of the table
+            table_row (List[str]): row of table to process
+        """
+        res = ""
+
+        for head, cell in zip(table_header[1:], table_row[1:]):
+            if table_header[0]:
+                res += (table_header[0] + " ")
+            res += ("the " + table_row[0] + " of " + head + " is " + cell + " . ")
+
+        res = " ".join([t for t in res.split(" ") if t != ""])
+
+        return res.strip()
+  
 
     def segment(self, text) -> Tuple[List[List[str]], List[Node]]:
         '''Extracts and returns all quantity mentions in a text.
