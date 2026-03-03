@@ -32,7 +32,7 @@ class NumericalReasoningHandler:
         self.validation_handler = ValidationHandler(task=task)
         self.prompt_handler = PromptHandler(task=task)
         self.system_prompt = self.prompt_handler.get_system_message()
-        self.judge_system_prompt = self.prompt_handler.get_system_message(judge=True)
+        self.judge_system_prompt = self.prompt_handler.get_system_message(variant="judge")
 
     def color_text(self, text: str, color_code: str) -> str:
         """Function used to color cmd line text."""
@@ -46,7 +46,7 @@ class NumericalReasoningHandler:
     
     def process_query_judge(self, query: str, evidence_list: List[str], response: str, actual_label: str, on_tok=None) -> str:
         """Runs a single fact-check/qa LLM-as-a-judge query."""
-        user_prompt = self.prompt_handler.get_user_message(query, evidence_list, fc_example_list=None, metadata={'response': response, 'actual_label': actual_label}, judge=True)
+        user_prompt = self.prompt_handler.get_user_message(query, evidence_list, fc_example_list=None, metadata={'response': response, 'actual_label': actual_label}, variant="judge")
         response, total_time = self.llm_handler.generate_response(self.judge_system_prompt, user_prompt, on_token=on_tok)
         return response, total_time
     
@@ -103,7 +103,7 @@ class NumericalReasoningHandler:
                 if golden: # if supposed to use the golden evidences
                     response, total_time = self.process_query(query['claim'], [query['doc']], query['examples'], on_tok=on_tok)
                 else:
-                    response, total_time = self.process_query(query['claim'], query['qrel_evidences'], query['examples'], on_tok=on_tok)
+                    response, total_time = self.process_query(query['claim'], query['quantemp_evidences'], query['examples'], on_tok=on_tok)
             else:
                 if log:
                     print(self.color_text(f"{i+start_index} Processing: {query['question']}", "93"))
@@ -254,7 +254,7 @@ class NumericalReasoningHandler:
                 if golden: # if supposed to use the golden evidences
                     response, total_time = self.process_query_judge(query['claim'], [query['doc']], output_json['outputs'][i+start_index]['response'], query['label'], on_tok=on_tok)
                 else:
-                    response, total_time = self.process_query_judge(query['claim'], query['evidences'], output_json['outputs'][i+start_index]['response'], query['label'], on_tok=on_tok)
+                    response, total_time = self.process_query_judge(query['claim'], query['quantemp_evidences'], output_json['outputs'][i+start_index]['response'], query['label'], on_tok=on_tok)
             else:
                 if log:
                     print(self.color_text(f"{i+start_index} Processing: {query['question']}", "93"))

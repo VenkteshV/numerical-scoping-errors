@@ -31,7 +31,7 @@ class PromptHandler:
         Gets the system message prompt.
         
         Args:
-            variant (str): which system prompt to retrieve: "base", "judge", or "extractive_check"
+            variant (str): which system prompt to retrieve: "base", "judge", "non_extractive_check" or "extractive_check"
         """
         
         return self.system_prompts[variant][self.task]
@@ -44,7 +44,7 @@ class PromptHandler:
             query (str): claim or question to fact-check or answer
             fc_example_list (List[Dict[str, Any]]): few-shot examples to include in base prompts
             metadata (Dict[str, Any]): metadata to be included for judge prompts
-            variant (str): which system prompt to retrieve: "base", "judge", or "extractive_check"
+            variant (str): which system prompt to retrieve: "base", "judge", "non_extractive_check" or "extractive_check"
         """
         if self.task == "fc":
             if variant == "base":
@@ -77,7 +77,34 @@ Give the reply in the following format:
 
 == YOUR OUTPUT ==
 """
+                
+            elif variant=="non_extractive_check":
+                statistics = "\n\n".join(metadata['statistics'])
+                user_message = f"""For each STATISTIC (IDs 1 - {len(metadata['statistics'])}), classify STATISTIC as extrapolative vs parametric, then evaluate correctness per the system rules. Return ONLY the JSON.
+
+QUESTION:
+<QUESTION>
+{query}
+</QUESTION>
+
+EVIDENCES:
+<EVIDENCES>
+{self.get_evidences(evidence_list)}
+</EVIDENCES>
+
+STATISTICS:
+<STATISTICS>
+{statistics}
+</STATISTICS>
+
+THINKING:
+<THINKING>
+{metadata['response']}
+</THINKING>
+"""    
+
             else:
+                statistics = "\n\n".join(metadata['statistics'])
                 user_message = f"""For each STATISTIC 1-{len(metadata['statistics'])}, check if CLAIM/EVIDENCE was interpreted correctly in THINKING. span_quote must be copied whole sentences exactly from CLAIM or EVIDENCE. Return only the JSON.
 
 CLAIM:
@@ -97,7 +124,7 @@ THINKING:
 
 STATISTICS:
 <STATISTICS>
-{"\n\n".join(metadata['statistics'])}
+{statistics}
 </STATISTICS>
 """
 
@@ -132,7 +159,33 @@ Give the reply in the following format:
 
 == YOUR OUTPUT ==
 """
+            elif variant=="non_extractive_check":
+                statistics = "\n\n".join(metadata['statistics'])
+                user_message = f"""For each STATISTIC (IDs 1 - {len(metadata['statistics'])}), classify STATISTIC as extrapolative vs parametric, then evaluate correctness per the system rules. Return ONLY the JSON.
+
+QUESTION:
+<QUESTION>
+{query}
+</QUESTION>
+
+EVIDENCES:
+<EVIDENCES>
+{self.get_evidences(evidence_list)}
+</EVIDENCES>
+
+STATISTICS:
+<STATISTICS>
+{statistics}
+</STATISTICS>
+
+THINKING:
+<THINKING>
+{metadata['response']}
+</THINKING>
+"""
+            
             else:
+                statistics = "\n\n".join(metadata['statistics'])
                 user_message = f"""For each STATISTIC 1-{len(metadata['statistics'])}, check if QUESTION/EVIDENCE was interpreted correctly in THINKING. span_quote must be copied whole sentences or table rows along with header row exactly from QUESTION or EVIDENCE. Return only the JSON.
 
 QUESTION:
@@ -152,7 +205,7 @@ THINKING:
 
 STATISTICS:
 <STATISTICS>
-{"\n\n".join(metadata['statistics'])}
+{statistics}
 </STATISTICS>
 """
         return user_message
