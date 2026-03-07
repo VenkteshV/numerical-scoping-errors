@@ -1,7 +1,7 @@
 """Quantity segmenter that returns the quantitiative segments within a claim
 
     'cd D:\Programs\stanford-corenlp\stanford-corenlp-4.5.10'
-    First run CoreNLP server with: 'java -mx4g -cp "*" edu.stanford.nlp.pipeline.StanfordCoreNLPServer -port 9000 -timeout 60000'
+    First run CoreNLP server with: 'java -mx12g -cp "*" edu.stanford.nlp.pipeline.StanfordCoreNLPServer -port 9000 -timeout 60000'
 
     Returns:
         List[str]: List of quantitative segments
@@ -341,7 +341,7 @@ class Segmenter():
         parse = self.nlp.annotate(text, properties={
             'annotators': 'parse',# "tokenize,ssplit,pos,lemma,depparse,parse,natlog,openie",
             'outputFormat': 'json',
-            'timeout': 60000,
+            'timeout': 600000,
         })
         
         # pycorenlp may return a raw JSON string; convert it.

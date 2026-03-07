@@ -1,5 +1,6 @@
 import argparse
 from numerical_reasoning_handler import NumericalReasoningHandler
+from scoping_error_measurer import ScopingErrorMeasurer
 
 def str2bool(v):
     """Custom boolean parser for argparse."""
@@ -26,6 +27,9 @@ def run(args):
         nr_handler.judge(args.input_json_file, args.output_json_file, log=args.log, golden=args.gold)
     if args.validation:
         nr_handler.validate_judge(args.input_json_file, args.output_json_file, log=args.log)
+    if args.advanced_judge:
+        scoping_error_measurer = ScopingErrorMeasurer(task=args.task, platform=args.platform)
+        scoping_error_measurer.run(args.input_json_file, args.output_json_file, log=args.log, golden=args.gold)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fact-checking")
@@ -37,6 +41,7 @@ if __name__ == "__main__":
     parser.add_argument("-v", "--validation", dest="validation", type=str2bool, default=True, help="Whether to perform validation")
     parser.add_argument("-p", "--platform", dest="platform", type=str, default="local", help="Which platform to perform inference on (local or delftblue)")
     parser.add_argument("-j", "--judge", dest="judge", type=str2bool, default=False, help="Whether to perform LLM-as-a-judge on the outputs of the main inference loop")
+    parser.add_argument("-a", "--advanced-judge", dest="advanced_judge", type=str2bool, default=False, help="Whether to perform advanced LLM-as-a-judge on the outputs of the main inference loop to measure scoping errors")
     args = parser.parse_args()
 
     run(args)

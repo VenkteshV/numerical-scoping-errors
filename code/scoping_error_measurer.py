@@ -95,7 +95,7 @@ class ScopingErrorMeasurer:
         else:
             if evidence_split in input_json_quantities: 
                 if len(input_json_quantities[evidence_split]) == len(input_json):
-                    print(f"Input quantities json is complete with length {len(input_json_quantities)} for split {evidence_split}")
+                    print(f"Input quantities json is complete with length {len(input_json_quantities[evidence_split])} for split {evidence_split}")
                     return input_json_file_quantities
                 else:
                     start_index = len(input_json_quantities[evidence_split])
@@ -533,18 +533,17 @@ class ScopingErrorMeasurer:
                     ctr = 0
                     for t_quantity in thinking_quantities:
                         for t_quantity_type in thinking_quantities[t_quantity]:
-                            if t_quantity_type["type"] != "extractive":
-                                result = j['results'][ctr]
-                                q = result['statistic_quantity'] if isinstance(result['statistic_quantity'], str) else str(result['statistic_quantity'])
-                                if q != t_quantity:
-                                    if log:
-                                        print(f"WARNING: during importance check length parsing json quantities not equal! {result} {t_quantity_type}")
-                                weight = float(result['importance_weight'])
-                                t_quantity_type['weight'] = weight
-                                t_quantity_type['weight_check'] = result
-                                response_dict['weights'].append(weight)
-                                ctr += 1
-                                total_weight += weight
+                            result = j['results'][ctr]
+                            q = result['statistic_quantity'] if isinstance(result['statistic_quantity'], str) else str(result['statistic_quantity'])
+                            if q != t_quantity:
+                                if log:
+                                    print(f"WARNING: during importance check length parsing json quantities not equal! {q} {t_quantity} {result} {t_quantity_type}")
+                            weight = float(result['importance_weight'])
+                            t_quantity_type['weight'] = weight
+                            t_quantity_type['weight_check'] = result
+                            response_dict['weights'].append(weight)
+                            ctr += 1
+                            total_weight += weight
 
                 if total_weight != 1.0: # re-scale if total_weight is not 1
                     if log:
@@ -555,13 +554,24 @@ class ScopingErrorMeasurer:
                             if isinstance(t_quantity_type['weight'], float):
                                 t_quantity_type['weight'] *= multiplier
                     for j, weight in enumerate(response_dict['weights']):
-                        response_dict['weights'][j] = weight * multiplier
+                        if isinstance(weight, float):
+                            response_dict['weights'][j] = weight * multiplier
             
             except Exception as e:
                 valid_json = False
                 response_dict['valid_json'] = False
                 if log:
                     print(f"ERROR parsing: {e} with json {response}")
+
+                if total_weight and total_weight != 1.0: # if incomplete weights, normalize those that exist
+                    multiplier = 1.0 / total_weight
+                    for t_quantity in thinking_quantities:
+                        for t_quantity_type in thinking_quantities[t_quantity]:
+                            if isinstance(t_quantity_type['weight'], float):
+                                t_quantity_type['weight'] *= multiplier
+                    for j, weight in enumerate(response_dict['weights']):
+                        if isinstance(weight, float):
+                            response_dict['weights'][j] = weight * multiplier
 
         if log:
             print(f"\n\nImportance Results:")
