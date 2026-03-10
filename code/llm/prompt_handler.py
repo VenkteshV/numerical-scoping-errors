@@ -80,7 +80,7 @@ Give the reply in the following format:
                 
             elif variant=="non_extractive_check":
                 statistics = "\n\n".join(metadata['statistics'])
-                user_message = f"""For each STATISTIC (IDs 1 - {len(metadata['statistics'])}), classify STATISTIC as extrapolative vs parametric, then evaluate correctness per the system rules. Return ONLY the JSON.
+                user_message = f"""For each STATISTIC (IDs {metadata['idxs'][0]} - {metadata['idxs'][1]}), classify STATISTIC as extrapolative vs parametric, then evaluate correctness per the system rules. Return ONLY the JSON.
 
 CLAIM:
 <CLAIM>
@@ -105,7 +105,7 @@ THINKING:
             
             elif variant=="importance_check":
                 statistics = "\n\n".join(metadata['statistics'])
-                user_message = f"""For each STATISTIC (IDs 1 - {len(metadata['statistics'])}), rate how influential it is to the THINKING, FINAL_ANSWER, and JUSTIFICATION.
+                user_message = f"""For each STATISTIC (IDs {metadata['idxs'][0]} - {metadata['idxs'][1]}), rate how influential it is to the THINKING, FINAL_ANSWER, and JUSTIFICATION.
 All weights must sum to 1. You must assign a weight to EVERY STATISTIC. Return ONLY the JSON.
 
 CLAIM:
@@ -140,7 +140,7 @@ STATISTICS:
 
             else:
                 statistics = "\n\n".join(metadata['statistics'])
-                user_message = f"""For each STATISTIC 1-{len(metadata['statistics'])}, check if CLAIM/EVIDENCE was interpreted correctly in THINKING. span_quote MUST be COPIED WHOLE sentences exactly from CLAIM or EVIDENCE. Return only the JSON.
+                user_message = f"""For each STATISTIC {metadata['idxs'][0]}-{metadata['idxs'][1]}, check if CLAIM/EVIDENCE was interpreted correctly in THINKING. span_quote MUST be COPIED WHOLE sentences exactly from CLAIM or EVIDENCE. Return only the JSON.
 
 CLAIM:
 <CLAIM>
@@ -196,7 +196,7 @@ Give the reply in the following format:
 """
             elif variant=="non_extractive_check":
                 statistics = "\n\n".join(metadata['statistics'])
-                user_message = f"""For each STATISTIC (IDs 1 - {len(metadata['statistics'])}), classify STATISTIC as extrapolative vs parametric, then evaluate correctness per the system rules. Return ONLY the JSON.
+                user_message = f"""For each STATISTIC (IDs {metadata['idxs'][0]} - {metadata['idxs'][1]}), classify STATISTIC as extrapolative vs parametric, then evaluate correctness per the system rules. Return ONLY the JSON.
 
 QUESTION:
 <QUESTION>
@@ -221,7 +221,7 @@ THINKING:
             
             elif variant=="importance_check":
                 statistics = "\n\n".join(metadata['statistics'])
-                user_message = f"""For each STATISTIC (IDs 1 - {len(metadata['statistics'])}), rate how influential it is to the THINKING, FINAL_ANSWER, and JUSTIFICATION.
+                user_message = f"""For each STATISTIC (IDs {metadata['idxs'][0]} - {metadata['idxs'][1]}), rate how influential it is to the THINKING, FINAL_ANSWER, and JUSTIFICATION.
 All weights must sum to 1. You must assign a weight to EVERY STATISTIC. Return ONLY the JSON.
 
 QUESTION:
@@ -256,7 +256,7 @@ STATISTICS:
 
             else:
                 statistics = "\n\n".join(metadata['statistics'])
-                user_message = f"""For each STATISTIC 1-{len(metadata['statistics'])}, check if QUESTION/EVIDENCE was interpreted correctly in THINKING. span_quote must be copied whole sentences or table rows along with header row exactly from QUESTION or EVIDENCE. Return only the JSON.
+                user_message = f"""For each STATISTIC {metadata['idxs'][0]}-{metadata['idxs'][1]}, check if QUESTION/EVIDENCE was interpreted correctly in THINKING. span_quote must be copied whole sentences or table rows along with header row exactly from QUESTION or EVIDENCE. Return only the JSON.
 
 QUESTION:
 <QUESTION>

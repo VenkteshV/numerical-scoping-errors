@@ -193,47 +193,53 @@ class ScopingErrorMeasurer:
         return input_json_file_quantities
 
 
-    def extract_thinking_quantities(self, thinking):
+    def extract_thinking_quantities(self, thinking, final_quantities = None):
         """
         Extract thinking quantities given query.
 
         Args:
             thinking (str): thinking for that query
+            final_quantities (Dict[str, Any]): final quantity dictionary to use
 
         Returns:
             final_quantities (Dict[str, Any]): quantities found in that response
         """
-        text = self.segmenter.normalize_text(thinking)
-        _, _, quantity_natural_language = self.segmenter.segment(text)
-        final_quantities = dict()
-        for output in quantity_natural_language:
-            if output['quantity'] not in final_quantities:
-                
-                final_quantities[output['quantity']] = [{'quantity_texts': [output['quantity_text']], 'sentence_idxs': [output['sentence_idx']], 'sentence_texts': [output['sentence_text']], 'quantity_metadata': self.segmenter.normalize_quantity_phrase(output['quantity_text'])}]
-            else:
-                # for each quantity type, compute agreement between quantity texts to ensure they measure about the same thing?
-                quantity_added = False
-                second = self.segmenter.normalize_quantity_phrase(output['quantity_text'])
-                for subquantity in final_quantities[output['quantity']]:
-                    first = subquantity['quantity_metadata']
-                    same_nums = self.segmenter.typed_quantity_similarity(first, second)
-                    if same_nums:
-                        quantity_added = True
-                        if len(output['quantity_text']) < len(subquantity['quantity_texts'][0]):
-                            subquantity['quantity_texts'].insert(0, output['quantity_text'])
-                            subquantity['sentence_idxs'].insert(0, output['sentence_idx'])
-                            subquantity['sentence_texts'].insert(0, output['sentence_text'])
-                            subquantity['quantity_metadata'] = second
-                        else:
-                            subquantity['quantity_texts'].append(output['quantity_text'])
-                            subquantity['sentence_idxs'].append(output['sentence_idx'])
-                            subquantity['sentence_texts'].append(output['sentence_text'])
-                
-                if not quantity_added:
-                    final_quantities[output['quantity']].append({'quantity_texts': [output['quantity_text']], 'sentence_idxs': [output['sentence_idx']], 'sentence_texts': [output['sentence_text']], 'quantity_metadata': second})
-                
+        try:
+            text = self.segmenter.normalize_text(thinking)
+            _, _, quantity_natural_language = self.segmenter.segment(text)
+            for output in quantity_natural_language:
+                if output['quantity'] not in final_quantities:
+                    
+                    final_quantities[output['quantity']] = [{'quantity_texts': [output['quantity_text']], 'sentence_idxs': [output['sentence_idx']], 'sentence_texts': [output['sentence_text']], 'quantity_metadata': self.segmenter.normalize_quantity_phrase(output['quantity_text'])}]
+                else:
+                    # for each quantity type, compute agreement between quantity texts to ensure they measure about the same thing?
+                    quantity_added = False
+                    second = self.segmenter.normalize_quantity_phrase(output['quantity_text'])
+                    for subquantity in final_quantities[output['quantity']]:
+                        first = subquantity['quantity_metadata']
+                        same_nums = self.segmenter.typed_quantity_similarity(first, second)
+                        if same_nums:
+                            quantity_added = True
+                            if len(output['quantity_text']) < len(subquantity['quantity_texts'][0]):
+                                subquantity['quantity_texts'].insert(0, output['quantity_text'])
+                                subquantity['sentence_idxs'].insert(0, output['sentence_idx'])
+                                subquantity['sentence_texts'].insert(0, output['sentence_text'])
+                                subquantity['quantity_metadata'] = second
+                            else:
+                                subquantity['quantity_texts'].append(output['quantity_text'])
+                                subquantity['sentence_idxs'].append(output['sentence_idx'])
+                                subquantity['sentence_texts'].append(output['sentence_text'])
+                    
+                    if not quantity_added:
+                        final_quantities[output['quantity']].append({'quantity_texts': [output['quantity_text']], 'sentence_idxs': [output['sentence_idx']], 'sentence_texts': [output['sentence_text']], 'quantity_metadata': second})
+        except Exception as e:
+            print(f"ERROR in thinking quantity extraction: {e}.")
         return final_quantities
 
+    def _chunk_list(self, xs, chunk_size=20):
+        """Function to aid with chunking quantities during check LLM calls."""
+        for i in range(0, len(xs), chunk_size):
+            yield xs[i:i + chunk_size], i+1, i+chunk_size if i+chunk_size < len(xs) else len(xs)
 
     def process_output(self, response):
         """
@@ -298,75 +304,81 @@ class ScopingErrorMeasurer:
             response_dict (Dict[str, Any]): dictionary containing extractive response information
             thinking_quantities (Dict[str, Any]): thinking quantity dict with extractive info included
         """
-        response_dict = {"str_response": "{\"results\": []}", "time": 0.0, "results": [], "json": {"results": []}, "valid_json": True}
+        response_dict = {"str_response": ["{\"results\": []}"], "time": [0.0], "results": [], "json": {"results": []}, "valid_json": [True], "valid": True}
         if len(formatted_quantities) == 0:
-            return response_dict
+            return response_dict, thinking_quantities
+        else:
+            response_dict['str_response'] = []
+            response_dict['time'] = []
+            response_dict['valid_json'] = []
 
-        user_prompt = self.prompt_handler.get_user_message(
-            query=query, 
-            evidence_list=evidences, 
-            fc_example_list=None, 
-            metadata={"statistics": formatted_quantities, "response": thinking}, 
-            variant="extractive_check")  
-        response, t = self.llm_handler.generate_response(self.extractive_check_system_prompt, user_prompt, on_token=on_tok)
+        for formatted_quantities_chunk, start_idx, end_idx in self._chunk_list(formatted_quantities, chunk_size=20):
+            user_prompt = self.prompt_handler.get_user_message(
+                query=query, 
+                evidence_list=evidences, 
+                fc_example_list=None, 
+                metadata={"statistics": formatted_quantities_chunk, "response": thinking, "idxs": (start_idx, end_idx)}, 
+                variant="extractive_check")  
+            response, t = self.llm_handler.generate_response(self.extractive_check_system_prompt, user_prompt, on_token=on_tok)
 
-        response_dict['str_response'] = response
-        response_dict['time'] = t
-
-        valid_json = True
-        try:
-            p_json = response[response.index('{'): response.rfind('}')+1]
-            j = json.loads(p_json)
-            response_dict['json'] = j
-        except Exception as e:
-            if log:
-                print(f"ERROR: parsing json response {response}")
-            valid_json = False
-
-        response_dict['valid_json'] = valid_json
-
-        if valid_json:
+            response_dict['str_response'].append(response)
+            response_dict['time'].append(t)
+            valid_json = True
             try:
-                if len(formatted_quantities) != len(j['results']): # value-based parsing
-                    if log:
-                        print(f"WARNING: json missing checking some quantities! {j} {formatted_quantities}")
-                    for result in j['results']:
-                        q = result['statistic_quantity'] if isinstance(result['statistic_quantity'], str) else str(result['statistic_quantity'])
-                        text = result['statistic_text']
-                        correct = result['correct']
-                        for t_quantity_type in thinking_quantities[q]:
-                            if text in t_quantity_type['quantity_texts']:
-                                t_quantity_type['correct'] = correct
-                                t_quantity_type['check'] = result
-                                response_dict['results'].append(correct)
-                                break
-                        
-                else: # length-based parsing
-                    ctr = 0
-                    for t_quantity in thinking_quantities:
-                        for t_quantity_type in thinking_quantities[t_quantity]:
-                            if t_quantity_type["type"] == "extractive":
-                                result = j['results'][ctr]
-                                q = result['statistic_quantity'] if isinstance(result['statistic_quantity'], str) else str(result['statistic_quantity'])
-                                if q != t_quantity:
-                                    if log:
-                                        print(f"WARNING: during length parsing json quantities not equal! {result} {t_quantity_type}")
-                                correct = result['correct']
-                                t_quantity_type['correct'] = result['correct']
-                                t_quantity_type['check'] = result
-                                response_dict['results'].append(correct)
-                                ctr += 1
-
+                p_json = response[response.index('{'): response.rfind('}')+1]
+                j = json.loads(p_json)
+                response_dict['json']['results'].extend(j['results'])
             except Exception as e:
-                valid_json = False
-                response_dict['valid_json'] = False
                 if log:
-                    print(f"ERROR parsing: {e} with json {response}")
+                    print(f"ERROR: parsing json response {response} {e}")
+                valid_json = False
+
+            response_dict['valid_json'].append(valid_json)
+
+        valid = True
+        try:
+            if len(formatted_quantities) != len(response_dict['json']['results']): # value-based parsing
+                if log:
+                    print(f"WARNING: json missing checking some quantities! {response_dict['json']['results']} {formatted_quantities}")
+                for result in response_dict['json']['results']:
+                    q = result['statistic_quantity'] if isinstance(result['statistic_quantity'], str) else str(result['statistic_quantity'])
+                    text = result['statistic_text']
+                    correct = result['correct']
+                    for t_quantity_type in thinking_quantities[q]:
+                        if text in t_quantity_type['quantity_texts']:
+                            t_quantity_type['correct'] = correct
+                            t_quantity_type['check'] = result
+                            response_dict['results'].append(correct)
+                            break
+                    
+            else: # length-based parsing
+                ctr = 0
+                for t_quantity in thinking_quantities:
+                    for t_quantity_type in thinking_quantities[t_quantity]:
+                        if t_quantity_type["type"] == "extractive":
+                            result = response_dict['json']['results'][ctr]
+                            q = result['statistic_quantity'] if isinstance(result['statistic_quantity'], str) else str(result['statistic_quantity'])
+                            if q != t_quantity:
+                                if log:
+                                    print(f"WARNING: during length parsing json quantities not equal! {result} {t_quantity_type}")
+                            correct = result['correct']
+                            t_quantity_type['correct'] = result['correct']
+                            t_quantity_type['check'] = result
+                            response_dict['results'].append(correct)
+                            ctr += 1
+
+        except Exception as e:
+            valid = False
+            if log:
+                print(f"ERROR parsing: {e} with json {response}")
 
         if log:
             print(f"\n\nExtractive Results:")
+            print(f"Valid: {valid}")
             print(f"Quantities ({len(formatted_quantities)}): {formatted_quantities};\nResults ({len(response_dict['results'])}): {response_dict['results']}")
-
+        
+        response_dict['valid'] = valid
+        
         return response_dict, thinking_quantities
     
 
@@ -387,79 +399,86 @@ class ScopingErrorMeasurer:
             response_dict (Dict[str, Any]): dictionary containing non extractive response information
             thinking_quantities (Dict[str, Any]): thinking quantity dict with non extractive info included
         """
-        response_dict = {"str_response": "{\"results\": []}", "time": 0.0, "results": [], "types": [], "json": {"results": []}, "valid_json": True}
+        response_dict = {"str_response": ["{\"results\": []}"], "time": [0.0], "results": [], "types": [], "json": {"results": []}, "valid_json": [True], 'valid': True}
         if len(formatted_quantities) == 0:
-            return response_dict
+            return response_dict, thinking_quantities
+        else:
+            response_dict['str_response'] = []
+            response_dict['time'] = []
+            response_dict['valid_json'] = []
 
-        user_prompt = self.prompt_handler.get_user_message(
-            query=query, 
-            evidence_list=evidences, 
-            fc_example_list=None, 
-            metadata={"statistics": formatted_quantities, "response": thinking}, 
-            variant="non_extractive_check")  
-        response, t = self.llm_handler.generate_response(self.non_extractive_check_system_prompt, user_prompt, on_token=on_tok)
+        for formatted_quantities_chunk, start_idx, end_idx in self._chunk_list(formatted_quantities, chunk_size=20):
+            user_prompt = self.prompt_handler.get_user_message(
+                query=query, 
+                evidence_list=evidences, 
+                fc_example_list=None, 
+                metadata={"statistics": formatted_quantities_chunk, "response": thinking, "idxs": (start_idx, end_idx)}, 
+                variant="non_extractive_check")  
+            response, t = self.llm_handler.generate_response(self.non_extractive_check_system_prompt, user_prompt, on_token=on_tok)
 
-        response_dict['str_response'] = response
-        response_dict['time'] = t
+            response_dict['str_response'].append(response)
+            response_dict['time'].append(t)
 
-        valid_json = True
-        try:
-            p_json = response[response.index('{'): response.rfind('}')+1]
-            j = json.loads(p_json)
-            response_dict['json'] = j
-        except Exception as e:
-            if log:
-                print(f"ERROR: parsing json response {response}")
-            valid_json = False
-
-        response_dict['valid_json'] = valid_json
-
-        if valid_json:
+            valid_json = True
             try:
-                if len(formatted_quantities) != len(j['results']): # value-based parsing
-                    if log:
-                        print(f"WARNING: json missing checking some quantities! {j} {formatted_quantities}")
-                    for result in j['results']:
-                        q = result['statistic_quantity'] if isinstance(result['statistic_quantity'], str) else str(result['statistic_quantity'])
-                        text = result['statistic_text']
-                        correct = result['correct']
-                        typ = result['quantity_type']
-                        for t_quantity_type in thinking_quantities[q]:
-                            if text in t_quantity_type['quantity_texts']:
-                                t_quantity_type['correct'] = correct
-                                t_quantity_type['check'] = result
-                                t_quantity_type['type'] = typ
-                                response_dict['results'].append(correct)
-                                response_dict['types'].append(typ)
-                                break
-                        
-                else: # length-based parsing
-                    ctr = 0
-                    for t_quantity in thinking_quantities:
-                        for t_quantity_type in thinking_quantities[t_quantity]:
-                            if t_quantity_type["type"] != "extractive":
-                                result = j['results'][ctr]
-                                q = result['statistic_quantity'] if isinstance(result['statistic_quantity'], str) else str(result['statistic_quantity'])
-                                if q != t_quantity:
-                                    if log:
-                                        print(f"WARNING: during length parsing json quantities not equal! {result} {t_quantity_type}")
-                                correct = result['correct']
-                                typ = result['quantity_type']
-                                t_quantity_type['correct'] = result['correct']
-                                t_quantity_type['check'] = result
-                                t_quantity_type['type'] = typ
-                                response_dict['results'].append(correct)
-                                response_dict['types'].append(typ)
-                                ctr += 1
-
+                p_json = response[response.index('{'): response.rfind('}')+1]
+                j = json.loads(p_json)
+                response_dict['json']['results'].extend(j['results'])
             except Exception as e:
-                valid_json = False
-                response_dict['valid_json'] = False
                 if log:
-                    print(f"ERROR parsing: {e} with json {response}")
+                    print(f"ERROR: parsing json response {response} {e}")
+                valid_json = False
+
+            response_dict['valid_json'].append(valid_json)
+
+        valid = True
+        try:
+            if len(formatted_quantities) != len(response_dict['json']['results']): # value-based parsing
+                if log:
+                    print(f"WARNING: json missing checking some quantities! {response_dict['json']['results']} {formatted_quantities}")
+                for result in response_dict['json']['results']:
+                    q = result['statistic_quantity'] if isinstance(result['statistic_quantity'], str) else str(result['statistic_quantity'])
+                    text = result['statistic_text']
+                    correct = result['correct']
+                    typ = result['quantity_type']
+                    for t_quantity_type in thinking_quantities[q]:
+                        if text in t_quantity_type['quantity_texts']:
+                            t_quantity_type['correct'] = correct
+                            t_quantity_type['check'] = result
+                            t_quantity_type['type'] = typ
+                            response_dict['results'].append(correct)
+                            response_dict['types'].append(typ)
+                            break
+                    
+            else: # length-based parsing
+                ctr = 0
+                for t_quantity in thinking_quantities:
+                    for t_quantity_type in thinking_quantities[t_quantity]:
+                        if t_quantity_type["type"] != "extractive":
+                            result = response_dict['json']['results'][ctr]
+                            q = result['statistic_quantity'] if isinstance(result['statistic_quantity'], str) else str(result['statistic_quantity'])
+                            if q != t_quantity:
+                                if log:
+                                    print(f"WARNING: during length parsing json quantities not equal! {result} {t_quantity_type}")
+                            correct = result['correct']
+                            typ = result['quantity_type']
+                            t_quantity_type['correct'] = result['correct']
+                            t_quantity_type['check'] = result
+                            t_quantity_type['type'] = typ
+                            response_dict['results'].append(correct)
+                            response_dict['types'].append(typ)
+                            ctr += 1
+
+        except Exception as e:
+            valid = False
+            if log:
+                print(f"ERROR parsing: {e} with json {response}")
+
+        response_dict['valid'] = valid
 
         if log:
             print(f"\n\nNon-Extractive Results:")
+            print(f"Valid: {valid}")
             print(f"Quantities ({len(formatted_quantities)}): {formatted_quantities};\nResults ({len(response_dict['results'])}): {response_dict['results']}\n Types ({len(response_dict['types'])}): {response_dict['types']}")
 
         return response_dict, thinking_quantities
@@ -484,40 +503,46 @@ class ScopingErrorMeasurer:
             response_dict (Dict[str, Any]): dictionary containing non extractive response information
             thinking_quantities (Dict[str, Any]): thinking quantity dict with non extractive info included
         """
-        response_dict = {"str_response": "{\"results\": []}", "time": 0.0, "weights": [], "json": {"results": []}, "valid_json": True}
+        response_dict = {"str_response": ["{\"results\": []}"], "time": [0.0], "weights": [], "json": {"results": []}, "valid_json": [True], 'valid': True}
         if len(formatted_quantities) == 0:
-            return response_dict
+            return response_dict, thinking_quantities
+        else:
+            response_dict['str_response'] = []
+            response_dict['time'] = []
+            response_dict['valid_json'] = []
 
-        user_prompt = self.prompt_handler.get_user_message(
-            query=query, 
-            evidence_list=evidences, 
-            fc_example_list=None, 
-            metadata={"statistics": formatted_quantities, "thinking": thinking, "predicted": final_answer, "justification": justification}, 
-            variant="importance_check")  
-        response, t = self.llm_handler.generate_response(self.importance_check_system_prompt, user_prompt, on_token=on_tok)
+        for formatted_quantities_chunk, start_idx, end_idx in self._chunk_list(formatted_quantities, chunk_size=20):
+            user_prompt = self.prompt_handler.get_user_message(
+                query=query, 
+                evidence_list=evidences, 
+                fc_example_list=None, 
+                metadata={"statistics": formatted_quantities_chunk, "thinking": thinking, "predicted": final_answer, "justification": justification, "idxs": (start_idx, end_idx)}, 
+                variant="importance_check")  
+            response, t = self.llm_handler.generate_response(self.importance_check_system_prompt, user_prompt, on_token=on_tok)
 
-        response_dict['str_response'] = response
-        response_dict['time'] = t
+            response_dict['str_response'].append(response)
+            response_dict['time'].append(t)
 
-        valid_json = True
-        try:
-            p_json = response[response.index('{'): response.rfind('}')+1]
-            j = json.loads(p_json)
-            response_dict['json'] = j
-        except Exception as e:
-            if log:
-                print(f"ERROR: parsing json response {response}")
-            valid_json = False
-
-        response_dict['valid_json'] = valid_json
-
-        if valid_json:
-            total_weight = 0.0 # for weight regularization later
+            valid_json = True
             try:
-                if len(formatted_quantities) != len(j['results']): # value-based parsing
-                    if log:
-                        print(f"WARNING: json missing weighing some quantities! {j} {formatted_quantities}")
-                    for result in j['results']:
+                p_json = response[response.index('{'): response.rfind('}')+1]
+                j = json.loads(p_json)
+                response_dict['json']['results'].extend(j['results'])
+            except Exception as e:
+                if log:
+                    print(f"ERROR: parsing json response {response} {e}")
+                valid_json = False
+
+            response_dict['valid_json'].append(valid_json)
+
+        valid = True
+        total_weight = 0.0 # for weight regularization later
+        try:
+            if len(formatted_quantities) != len(response_dict['json']['results']): # value-based parsing
+                if log:
+                    print(f"WARNING: json missing weighing some quantities! {response_dict['json']['results']} {formatted_quantities}")
+                for result in response_dict['json']['results']:
+                    try:
                         q = result['statistic_quantity'] if isinstance(result['statistic_quantity'], str) else str(result['statistic_quantity'])
                         text = result['statistic_text']
                         weight = float(result['importance_weight'])
@@ -528,12 +553,16 @@ class ScopingErrorMeasurer:
                                 response_dict['weights'].append(weight)
                                 total_weight += weight
                                 break
-                        
-                else: # length-based parsing
-                    ctr = 0
-                    for t_quantity in thinking_quantities:
-                        for t_quantity_type in thinking_quantities[t_quantity]:
-                            result = j['results'][ctr]
+                    except Exception as e:
+                        if log:
+                            print(f"Trouble with parsing quantity {q} with weight {weight} {e}")
+                    
+            else: # length-based parsing
+                ctr = 0
+                for t_quantity in thinking_quantities:
+                    for t_quantity_type in thinking_quantities[t_quantity]:
+                        try:
+                            result = response_dict['json']['results'][ctr]
                             q = result['statistic_quantity'] if isinstance(result['statistic_quantity'], str) else str(result['statistic_quantity'])
                             if q != t_quantity:
                                 if log:
@@ -544,43 +573,48 @@ class ScopingErrorMeasurer:
                             response_dict['weights'].append(weight)
                             ctr += 1
                             total_weight += weight
+                        except Exception as e:
+                            if log:
+                                print(f"Trouble with parsing quantity {q} with weight {weight} {e}")
 
-                if total_weight != 1.0: # re-scale if total_weight is not 1
-                    if log:
-                        print(f"WARNING: weights not equal to 1, rescaling! {total_weight} {response_dict['weights']}")
-                    multiplier = 1.0 / total_weight
-                    for t_quantity in thinking_quantities:
-                        for t_quantity_type in thinking_quantities[t_quantity]:
-                            if isinstance(t_quantity_type['weight'], float):
-                                t_quantity_type['weight'] *= multiplier
-                    for j, weight in enumerate(response_dict['weights']):
-                        if isinstance(weight, float):
-                            response_dict['weights'][j] = weight * multiplier
-            
-            except Exception as e:
-                valid_json = False
-                response_dict['valid_json'] = False
+            if total_weight != 1.0: # re-scale if total_weight is not 1
                 if log:
-                    print(f"ERROR parsing: {e} with json {response}")
+                    print(f"WARNING: weights not equal to 1, rescaling! {total_weight} {response_dict['weights']}")
+                multiplier = 1.0 / total_weight
+                for t_quantity in thinking_quantities:
+                    for t_quantity_type in thinking_quantities[t_quantity]:
+                        if isinstance(t_quantity_type['weight'], float):
+                            t_quantity_type['weight'] *= multiplier
+                for j, weight in enumerate(response_dict['weights']):
+                    if isinstance(weight, float):
+                        response_dict['weights'][j] = weight * multiplier
+        
+        except Exception as e:
+            valid = False
+            if log:
+                print(f"ERROR parsing: {e} with json {response}")
 
-                if total_weight and total_weight != 1.0: # if incomplete weights, normalize those that exist
-                    multiplier = 1.0 / total_weight
-                    for t_quantity in thinking_quantities:
-                        for t_quantity_type in thinking_quantities[t_quantity]:
-                            if isinstance(t_quantity_type['weight'], float):
-                                t_quantity_type['weight'] *= multiplier
-                    for j, weight in enumerate(response_dict['weights']):
-                        if isinstance(weight, float):
-                            response_dict['weights'][j] = weight * multiplier
+            if total_weight and total_weight != 1.0: # if incomplete weights, normalize those that exist
+                multiplier = 1.0 / total_weight
+                for t_quantity in thinking_quantities:
+                    for t_quantity_type in thinking_quantities[t_quantity]:
+                        if isinstance(t_quantity_type['weight'], float):
+                            t_quantity_type['weight'] *= multiplier
+                for j, weight in enumerate(response_dict['weights']):
+                    if isinstance(weight, float):
+                        response_dict['weights'][j] = weight * multiplier
+
+        response_dict['valid'] = valid
 
         if log:
             print(f"\n\nImportance Results:")
+            print(f"Valid: {valid}")
             print(f"Quantities ({len(formatted_quantities)}): {formatted_quantities};\nWeights ({len(response_dict['weights'])}): {response_dict['weights']}")
 
         return response_dict, thinking_quantities
 
 
-    def run(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=5, golden: bool=False, input_json_file_quantities: str = None):
+    def run(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=5, golden: bool=False, input_json_file_quantities: str = None, evidence_split: str="doc"):
         """
         Main function for measuring scoping error processing
 
@@ -591,6 +625,7 @@ class ScopingErrorMeasurer:
             checkpoint (int): how often to save to the output file
             golden (bool): whether to use golden evidence
             input_json_file_quantities (str): json file that contains the quantities for the inputs (optional)
+            evidence_split (str): which evidence split to use
         """
         if log:
             start_time = time.time()
@@ -626,7 +661,6 @@ class ScopingErrorMeasurer:
             input_json = json.load(f)
 
         # Load input quantities file
-        evidence_split = "doc" if golden else "quantemp_evidences"
         input_json_file_quantities = self.set_up_input_json_quantities(input_json_file, input_json_file_quantities, evidence_split, checkpoint, log)
         with open(input_json_file_quantities) as f:
             input_json_quantities = json.load(f)
@@ -650,7 +684,26 @@ class ScopingErrorMeasurer:
             thinking, final_answer, justification = self.process_output(outputs['response'])
             
             # extract thinking quantities
-            thinking_quantities = self.extract_thinking_quantities(thinking)
+            thinking_quantities = dict()
+            # Verify that text is safe to process, fix if not safe to process
+            stats = self.segmenter.compute_parse_density(thinking)
+            if stats['risk'] != 'safe': # text is not safe to process
+                parts = self.segmenter.split_for_processing(thinking)
+                new_text = " ".join(parts)
+                if self.segmenter.compute_parse_density(new_text) != 'safe':
+                    # new text is also not safe to process
+                    if log:
+                        print(f"Thinking and new_text too dense for quantity segmenter. Converted {thinking} to {parts}")
+                    # compute thinking quantities in parts and aggregate!
+                    for part in parts:
+                        thinking_quantities = self.extract_thinking_quantities(part, thinking_quantities)
+                else:
+                    if log:
+                        print(f"Thinking too dense for quantity segmenter. Converted {thinking} to {new_text}")
+                    thinking_quantities = self.extract_thinking_quantities(new_text, thinking_quantities)
+                # if the number density is too high, normalize text to be less dense. 
+            else:
+                thinking_quantities = self.extract_thinking_quantities(thinking, thinking_quantities)
             if log:
                 print(self.color_text(f"Thinking numbers gotten: {list(thinking_quantities.keys())}", "91"))
 
@@ -710,7 +763,7 @@ class ScopingErrorMeasurer:
 
             # Aggregate results
             scoping_error_dict = {
-                'valid': True if extractive_response_dict['valid_json'] and non_extractive_response_dict['valid_json'] and importance_response_dict['valid_json'] else False,
+                'valid': True if False not in extractive_response_dict['valid_json'] and False not in non_extractive_response_dict['valid_json'] and False not in importance_response_dict['valid_json'] else False,
                 'scoping_error': False,
                 'score': 0.0, 
                 'per_class': {
@@ -773,5 +826,579 @@ class ScopingErrorMeasurer:
         if log:
             total_time = time.time() - start_time
             print(f"Judge processing finished in {total_time} seconds...")
+
+        return output
+
+
+    def extractive_check_repair(self, query, evidences, thinking, thinking_quantities, formatted_quantities, log, on_tok, repair):
+        """
+        Function that checks whether a list of extractive quantities is extracted correctly.
+
+        Args:
+            query (str): claim to fact-check or question to answer
+            evidences (List[str]): list of input evidences
+            thinking (str): string thinking
+            thinking_quantities (Dict[str, Any]): dictionary of thinking quantities
+            formatted_quantities (List[str]): list of statistics in string format
+            log (bool): whether to print intermediate statements or not
+            on_tok (Callable): function that can print intermediate LLM outputs
+            repair (Dict[str, Any]): advanced_judge_outputs from previous pass
+
+        Returns:
+            response_dict (Dict[str, Any]): dictionary containing extractive response information
+            thinking_quantities (Dict[str, Any]): thinking quantity dict with extractive info included
+        """
+        response_dict = repair['response_dicts']['extractive']
+        if len(formatted_quantities) == 0:
+            return response_dict, thinking_quantities
+
+        for i, (formatted_quantities_chunk, start_idx, end_idx) in enumerate(self._chunk_list(formatted_quantities, chunk_size=20)):
+            if response_dict['valid_json'][i]:
+                continue
+            user_prompt = self.prompt_handler.get_user_message(
+                query=query, 
+                evidence_list=evidences, 
+                fc_example_list=None, 
+                metadata={"statistics": formatted_quantities_chunk, "response": thinking, 'idxs': (start_idx, end_idx)}, 
+                variant="extractive_check")  
+            response, t = self.llm_handler.generate_response(self.extractive_check_system_prompt, user_prompt, on_token=on_tok)
+
+            response_dict['str_response'][i] = response
+            response_dict['time'][i] = t
+            valid_json = True
+            try:
+                p_json = response[response.index('{'): response.rfind('}')+1]
+                j = json.loads(p_json)
+                # insert new statistics into old results
+                j_ctr = 0
+                o_ctr = 0
+                updated_results = []
+                while j_ctr < len(j['results']) and o_ctr < len(response_dict['json']['results']):
+                    if int(j['results'][j_ctr]['statistic_id']) <= int(response_dict['json']['results'][o_ctr]['statistic_id']):
+                        updated_results.append(j['results'][j_ctr])
+                        j_ctr += 1
+                    else:
+                        updated_results.append(response_dict['json']['results'][o_ctr])
+                        o_ctr += 1
+
+                if j_ctr < len(j['results']):
+                    updated_results.extend(j['results'][j_ctr:])
+                if o_ctr < len(response_dict['json']['results']):
+                    updated_results.extend(response_dict['json']['results'][o_ctr:])
+                
+                response_dict['json']['results'] = updated_results
+            except Exception as e:
+                if log:
+                    print(f"ERROR: parsing json response {response} {e}")
+                valid_json = False
+
+            response_dict['valid_json'][i] = valid_json
+
+        response_dict['results'] = []
+        valid = True
+        try:
+            if len(formatted_quantities) != len(response_dict['json']['results']): # value-based parsing
+                if log:
+                    print(f"WARNING: json missing checking some quantities! {response_dict['json']['results']} {formatted_quantities}")
+                for result in response_dict['json']['results']:
+                    q = result['statistic_quantity'] if isinstance(result['statistic_quantity'], str) else str(result['statistic_quantity'])
+                    text = result['statistic_text']
+                    correct = result['correct']
+                    for t_quantity_type in thinking_quantities[q]:
+                        if text in t_quantity_type['quantity_texts']:
+                            t_quantity_type['correct'] = correct
+                            t_quantity_type['check'] = result
+                            response_dict['results'].append(correct)
+                            break
+                    
+            else: # length-based parsing
+                ctr = 0
+                for t_quantity in thinking_quantities:
+                    for t_quantity_type in thinking_quantities[t_quantity]:
+                        if t_quantity_type["type"] == "extractive":
+                            result = response_dict['json']['results'][ctr]
+                            q = result['statistic_quantity'] if isinstance(result['statistic_quantity'], str) else str(result['statistic_quantity'])
+                            if q != t_quantity:
+                                if log:
+                                    print(f"WARNING: during length parsing json quantities not equal! {result} {t_quantity_type}")
+                            correct = result['correct']
+                            t_quantity_type['correct'] = result['correct']
+                            t_quantity_type['check'] = result
+                            response_dict['results'].append(correct)
+                            ctr += 1
+
+        except Exception as e:
+            valid = False
+            if log:
+                print(f"ERROR parsing: {e} with json {response}")
+
+        if log:
+            print(f"\n\nExtractive Results:")
+            print(f"Valid: {valid}")
+            print(f"Quantities ({len(formatted_quantities)}): {formatted_quantities};\nResults ({len(response_dict['results'])}): {response_dict['results']}")
+        
+        response_dict['valid'] = valid
+        
+        return response_dict, thinking_quantities
+
+
+    def non_extractive_check_repair(self, query, evidences, thinking, thinking_quantities, formatted_quantities, log, on_tok, repair):
+        """
+        Function that checks whether a list of non extractive quantities are parametric or extrapolative and correct.
+
+        Args:
+            query (str): claim to fact-check or question to answer
+            evidences (List[str]): list of input evidences
+            thinking (str): string thinking
+            thinking_quantities (Dict[str, Any]): dictionary of thinking quantities
+            formatted_quantities (List[str]): list of statistics in string format
+            log (bool): whether to print intermediate statements or not
+            on_tok (Callable): function that can print intermediate LLM outputs
+            repair (Dict[str, Any]): advanced_judge_outputs from previous pass
+
+        Returns:
+            response_dict (Dict[str, Any]): dictionary containing non extractive response information
+            thinking_quantities (Dict[str, Any]): thinking quantity dict with non extractive info included
+        """
+        response_dict = repair['response_dicts']['non_extractive']
+        if len(formatted_quantities) == 0:
+            return response_dict, thinking_quantities
+
+        for i, (formatted_quantities_chunk, start_idx, end_idx) in enumerate(self._chunk_list(formatted_quantities, chunk_size=20)):
+            if response_dict['valid_json'][i]:
+                continue
+            user_prompt = self.prompt_handler.get_user_message(
+                query=query, 
+                evidence_list=evidences, 
+                fc_example_list=None, 
+                metadata={"statistics": formatted_quantities_chunk, "response": thinking, 'idxs': (start_idx, end_idx)}, 
+                variant="non_extractive_check")  
+            response, t = self.llm_handler.generate_response(self.non_extractive_check_system_prompt, user_prompt, on_token=on_tok)
+
+            response_dict['str_response'][i] = response
+            response_dict['time'][i] = t
+            valid_json = True
+            try:
+                p_json = response[response.index('{'): response.rfind('}')+1]
+                j = json.loads(p_json)
+                # insert new statistics into old results
+                j_ctr = 0
+                o_ctr = 0
+                updated_results = []
+                while j_ctr < len(j['results']) and o_ctr < len(response_dict['json']['results']):
+                    if int(j['results'][j_ctr]['statistic_id']) <= int(response_dict['json']['results'][o_ctr]['statistic_id']):
+                        updated_results.append(j['results'][j_ctr])
+                        j_ctr += 1
+                    else:
+                        updated_results.append(response_dict['json']['results'][o_ctr])
+                        o_ctr += 1
+
+                if j_ctr < len(j['results']):
+                    updated_results.extend(j['results'][j_ctr:])
+                if o_ctr < len(response_dict['json']['results']):
+                    updated_results.extend(response_dict['json']['results'][o_ctr:])
+                
+                response_dict['json']['results'] = updated_results
+            except Exception as e:
+                if log:
+                    print(f"ERROR: parsing json response {response} {e}")
+                valid_json = False
+
+            response_dict['valid_json'][i] = valid_json
+
+        response_dict['results'] = []
+        response_dict['types'] = []
+        valid = True
+        try:
+            if len(formatted_quantities) != len(response_dict['json']['results']): # value-based parsing
+                if log:
+                    print(f"WARNING: json missing checking some quantities! {response_dict['json']['results']} {formatted_quantities}")
+                for result in response_dict['json']['results']:
+                    q = result['statistic_quantity'] if isinstance(result['statistic_quantity'], str) else str(result['statistic_quantity'])
+                    text = result['statistic_text']
+                    correct = result['correct']
+                    typ = result['quantity_type']
+                    for t_quantity_type in thinking_quantities[q]:
+                        if text in t_quantity_type['quantity_texts']:
+                            t_quantity_type['correct'] = correct
+                            t_quantity_type['check'] = result
+                            t_quantity_type['type'] = typ
+                            response_dict['results'].append(correct)
+                            response_dict['types'].append(typ)
+                            break
+                    
+            else: # length-based parsing
+                ctr = 0
+                for t_quantity in thinking_quantities:
+                    for t_quantity_type in thinking_quantities[t_quantity]:
+                        if t_quantity_type["type"] != "extractive":
+                            result = response_dict['json']['results'][ctr]
+                            q = result['statistic_quantity'] if isinstance(result['statistic_quantity'], str) else str(result['statistic_quantity'])
+                            if q != t_quantity:
+                                if log:
+                                    print(f"WARNING: during length parsing json quantities not equal! {result} {t_quantity_type}")
+                            correct = result['correct']
+                            typ = result['quantity_type']
+                            t_quantity_type['correct'] = result['correct']
+                            t_quantity_type['check'] = result
+                            t_quantity_type['type'] = typ
+                            response_dict['results'].append(correct)
+                            response_dict['types'].append(typ)
+                            ctr += 1
+
+        except Exception as e:
+            valid = False
+            if log:
+                print(f"ERROR parsing: {e} with json {response}")
+
+        response_dict['valid'] = valid
+
+        if log:
+            print(f"\n\nNon-Extractive Results:")
+            print(f"Valid: {valid}")
+            print(f"Quantities ({len(formatted_quantities)}): {formatted_quantities};\nResults ({len(response_dict['results'])}): {response_dict['results']}\n Types ({len(response_dict['types'])}): {response_dict['types']}")
+
+        return response_dict, thinking_quantities
+    
+
+    def importance_check_repair(self, query, evidences, thinking, final_answer, justification, thinking_quantities, formatted_quantities, log, on_tok, repair):
+        """
+        Function that gets importance weights for statistics for scoring calculation.
+
+        Args:
+            query (str): claim to fact-check or question to answer
+            evidences (List[str]): list of input evidences
+            thinking (str): string thinking
+            final_answer (str): string final answer
+            justification (str): string justification
+            thinking_quantities (Dict[str, Any]): dictionary of thinking quantities
+            formatted_quantities (List[str]): list of statistics in string format
+            log (bool): whether to print intermediate statements or not
+            on_tok (Callable): function that can print intermediate LLM outputs
+            repair (Dict[str, Any]): advanced_judge_outputs from previous pass
+
+        Returns:
+            response_dict (Dict[str, Any]): dictionary containing non extractive response information
+            thinking_quantities (Dict[str, Any]): thinking quantity dict with non extractive info included
+        """
+        
+        response_dict = repair['response_dicts']['importance']
+        if len(formatted_quantities) == 0:
+            return response_dict, thinking_quantities
+
+        for i, (formatted_quantities_chunk, start_idx, end_idx) in enumerate(self._chunk_list(formatted_quantities, chunk_size=20)):
+            if response_dict['valid_json'][i]:
+                continue
+            user_prompt = self.prompt_handler.get_user_message(
+                query=query, 
+                evidence_list=evidences, 
+                fc_example_list=None, 
+                metadata={"statistics": formatted_quantities_chunk, "thinking": thinking, "predicted": final_answer, "justification": justification, 'idxs': (start_idx, end_idx)}, 
+                variant="importance_check")  
+            response, t = self.llm_handler.generate_response(self.importance_check_system_prompt, user_prompt, on_token=on_tok)
+
+            response_dict['str_response'][i] = response
+            response_dict['time'][i] = t
+
+            valid_json = True
+            try:
+                p_json = response[response.index('{'): response.rfind('}')+1]
+                j = json.loads(p_json)
+                # insert new statistics into old results
+                j_ctr = 0
+                o_ctr = 0
+                updated_results = []
+                while j_ctr < len(j['results']) and o_ctr < len(response_dict['json']['results']):
+                    if int(j['results'][j_ctr]['statistic_id']) <= int(response_dict['json']['results'][o_ctr]['statistic_id']):
+                        updated_results.append(j['results'][j_ctr])
+                        j_ctr += 1
+                    else:
+                        updated_results.append(response_dict['json']['results'][o_ctr])
+                        o_ctr += 1
+
+                if j_ctr < len(j['results']):
+                    updated_results.extend(j['results'][j_ctr:])
+                if o_ctr < len(response_dict['json']['results']):
+                    updated_results.extend(response_dict['json']['results'][o_ctr:])
+                
+                response_dict['json']['results'] = updated_results
+            except Exception as e:
+                if log:
+                    print(f"ERROR: parsing json response {response} {e}")
+                valid_json = False
+
+            response_dict['valid_json'][i] = valid_json
+
+        
+        response_dict['weights'] = []
+        valid = True
+        total_weight = 0.0 # for weight regularization later
+        try:
+            if len(formatted_quantities) != len(response_dict['json']['results']): # value-based parsing
+                if log:
+                    print(f"WARNING: json missing weighing some quantities! {response_dict['json']['results']} {formatted_quantities}")
+                for result in response_dict['json']['results']:
+                    try:
+                        q = result['statistic_quantity'] if isinstance(result['statistic_quantity'], str) else str(result['statistic_quantity'])
+                        text = result['statistic_text']
+                        weight = float(result['importance_weight'])
+                        for t_quantity_type in thinking_quantities[q]:
+                            if text in t_quantity_type['quantity_texts']:
+                                t_quantity_type['weight'] = weight
+                                t_quantity_type['weight_check'] = result
+                                response_dict['weights'].append(weight)
+                                total_weight += weight
+                                break
+                    except Exception as e:
+                        if log:
+                            print(f"Trouble with parsing quantity {q} with weight {weight} {e}")
+                    
+            else: # length-based parsing
+                ctr = 0
+                for t_quantity in thinking_quantities:
+                    for t_quantity_type in thinking_quantities[t_quantity]:
+                        try:
+                            result = response_dict['json']['results'][ctr]
+                            q = result['statistic_quantity'] if isinstance(result['statistic_quantity'], str) else str(result['statistic_quantity'])
+                            if q != t_quantity:
+                                if log:
+                                    print(f"WARNING: during importance check length parsing json quantities not equal! {q} {t_quantity} {result} {t_quantity_type}")
+                            weight = float(result['importance_weight'])
+                            t_quantity_type['weight'] = weight
+                            t_quantity_type['weight_check'] = result
+                            response_dict['weights'].append(weight)
+                            ctr += 1
+                            total_weight += weight
+                        except Exception as e:
+                            if log:
+                                print(f"Trouble with parsing quantity {q} with weight {weight} {e}")
+
+            if total_weight != 1.0: # re-scale if total_weight is not 1
+                if log:
+                    print(f"WARNING: weights not equal to 1, rescaling! {total_weight} {response_dict['weights']}")
+                multiplier = 1.0 / total_weight
+                for t_quantity in thinking_quantities:
+                    for t_quantity_type in thinking_quantities[t_quantity]:
+                        if isinstance(t_quantity_type['weight'], float):
+                            t_quantity_type['weight'] *= multiplier
+                for j, weight in enumerate(response_dict['weights']):
+                    if isinstance(weight, float):
+                        response_dict['weights'][j] = weight * multiplier
+        
+        except Exception as e:
+            valid = False
+            if log:
+                print(f"ERROR parsing: {e} with json {response}")
+
+            if total_weight and total_weight != 1.0: # if incomplete weights, normalize those that exist
+                multiplier = 1.0 / total_weight
+                for t_quantity in thinking_quantities:
+                    for t_quantity_type in thinking_quantities[t_quantity]:
+                        if isinstance(t_quantity_type['weight'], float):
+                            t_quantity_type['weight'] *= multiplier
+                for j, weight in enumerate(response_dict['weights']):
+                    if isinstance(weight, float):
+                        response_dict['weights'][j] = weight * multiplier
+
+        response_dict['valid'] = valid
+
+        if log:
+            print(f"\n\nImportance Results:")
+            print(f"Valid: {valid}")
+            print(f"Quantities ({len(formatted_quantities)}): {formatted_quantities};\nWeights ({len(response_dict['weights'])}): {response_dict['weights']}")
+
+        return response_dict, thinking_quantities
+
+
+    def repair(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=5, golden: bool=False, input_json_file_quantities: str = None, evidence_split: str = "doc"):
+        """
+        Main function for repairing measured scoping errors
+
+        Args:
+            input_json_file (str): json file that contains inputs
+            output_json_file (str): json file to save outputs
+            log (bool): whether to log intermediate statements
+            checkpoint (int): how often to save to the output file
+            golden (bool): whether to use golden evidence
+            input_json_file_quantities (str): json file that contains the quantities for the inputs (optional)
+            evidence_split (str): which evidence split to use
+        """
+        if log:
+            start_time = time.time()
+            print(f"Starting {self.task} advanced judge repair processing...")
+
+        # Load LLMHandler with lengthier outputs
+        if self.platform == "local":
+            print("Loaded lengthier LLM-as-a-Judge.")
+            self.llm_handler = LLMHandler(completion_params_file="llm/completion_params_judge_lengthy.json")
+
+        # Load outputs and previous checkpoint
+        if os.path.isfile(output_json_file):
+            with open(output_json_file, "r") as f:
+                output_json = json.load(f)
+
+            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'golden' in output_json and output_json['input_json_file'] == input_json_file and output_json['golden'] == golden and 'advanced_judge' in output_json:
+                if log:
+                    print("Inference outputs loaded.")
+                output = output_json
+            else:
+                print(f"ERROR! Output file exists and has results not matching current input file!")
+                sys.exit()
+        else:
+            print(f"ERROR! Output file does not exist!")
+            sys.exit()
+
+        start_index = 0
+        
+        if log:
+            print(f"Starting advanced judge repair from claim with index: {start_index}.")
+            
+        # Load input file
+        with open(input_json_file) as f:
+            input_json = json.load(f)
+
+        # Load input quantities file
+        input_json_file_quantities = self.set_up_input_json_quantities(input_json_file, input_json_file_quantities, evidence_split, checkpoint, log)
+        with open(input_json_file_quantities) as f:
+            input_json_quantities = json.load(f)
+
+        # Set up intermediate writing if user wants logs
+        def on_tok(token):
+            print(self.color_text(token, '96'), end="") # colored light cyan
+
+        if not log:
+            on_tok = None
+
+        # Main advanced judge loop
+        for i, (query, input_quantities, outputs, advanced_judge_outputs) in enumerate(zip(input_json[start_index:], input_json_quantities[evidence_split][start_index:], output_json['outputs'][start_index:], output_json['advanced_judge'][start_index:])):
+            if log:
+                print(self.color_text(f"{i+start_index} Repair Processing: {query['claim'] if self.task == 'fc' else query['question']}", "93"))
+            
+            if 'valid' in advanced_judge_outputs and advanced_judge_outputs['valid'] == True:
+                continue
+
+            t0 = time.time()
+
+            q = query['claim'] if self.task == "fc" else query['question']
+            evidences = [query[evidence_split]] if self.task == "fc" and evidence_split == "doc" else query[evidence_split]
+            thinking, final_answer, justification = self.process_output(outputs['response'])
+
+            thinking_quantities = advanced_judge_outputs['thinking_quantities']
+
+            # match thinking quantities to input quantities searching for extractive & non extractive
+            extractive_formatted_quantities = [] # contains extractive quantities
+            non_extractive_formatted_quantities = [] # contains parametric/extrapolative quantities
+            formatted_quantities = [] # contains all quantities
+            extractive_ctr = 1
+            non_extractive_ctr = 1
+            ctr = 1
+
+            for t_quantity in thinking_quantities:
+                if t_quantity in input_quantities: # if exact match of quantity in input dict
+                    for i, t_quantity_type in enumerate(thinking_quantities[t_quantity]):                           
+                        if t_quantity_type["type"] == "extractive":
+                            extractive_formatted_quantities.append(f"STATISTIC ID: {extractive_ctr}\n- quantity: {t_quantity}\n- text: '{t_quantity_type['quantity_texts'][0]}'")
+                            extractive_ctr += 1
+                            formatted_quantities.append(f"STATISTIC ID: {ctr}\n- quantity: {t_quantity}\n- text: '{t_quantity_type['quantity_texts'][0]}'")
+                            ctr += 1
+                        else:
+                            non_extractive_formatted_quantities.append(f"STATISTIC ID: {non_extractive_ctr}\n- quantity: {t_quantity}\n- text: '{t_quantity_type['quantity_texts'][0]}'")
+                            non_extractive_ctr += 1
+                            formatted_quantities.append(f"STATISTIC ID: {ctr}\n- quantity: {t_quantity}\n- text: '{t_quantity_type['quantity_texts'][0]}'")
+                            ctr += 1
+        
+                else:
+                    # mark whole group as non extractive
+                    for i, t_quantity_type in enumerate(thinking_quantities[t_quantity]):
+                        non_extractive_formatted_quantities.append(f"STATISTIC ID: {non_extractive_ctr}\n- quantity: {t_quantity}\n- text: '{t_quantity_type['quantity_texts'][0]}'")
+                        non_extractive_ctr += 1
+                        formatted_quantities.append(f"STATISTIC ID: {ctr}\n- quantity: {t_quantity}\n- text: '{t_quantity_type['quantity_texts'][0]}'")
+                        ctr += 1
+
+            # Now we have a list of extractive, nonextractive, and overall statistics
+            # Do extractive check
+            if False in advanced_judge_outputs['response_dicts']['extractive']['valid_json']:
+                print(f"Repairing {len(advanced_judge_outputs['response_dicts']['extractive']['valid_json']) - sum(advanced_judge_outputs['response_dicts']['extractive']['valid_json'])} extractive call(s)!")
+                extractive_response_dict, thinking_quantities = self.extractive_check_repair(q, evidences, thinking, thinking_quantities, extractive_formatted_quantities, log, on_tok, repair=advanced_judge_outputs)
+            else:
+                extractive_response_dict = advanced_judge_outputs['response_dicts']['extractive']
+            # Do nonextractive check
+            if False in advanced_judge_outputs['response_dicts']['non_extractive']['valid_json']:
+                print(f"Repairing {len(advanced_judge_outputs['response_dicts']['non_extractive']['valid_json']) - sum(advanced_judge_outputs['response_dicts']['non_extractive']['valid_json'])} non-extractive call(s)!")
+                non_extractive_response_dict, thinking_quantities = self.non_extractive_check_repair(q, evidences, thinking, thinking_quantities, non_extractive_formatted_quantities, log, on_tok, repair=advanced_judge_outputs)
+            else:
+                non_extractive_response_dict = advanced_judge_outputs['response_dicts']['non_extractive']
+            # Do importance check
+            if False in advanced_judge_outputs['response_dicts']['importance']['valid_json']:
+                print(f"Repairing {len(advanced_judge_outputs['response_dicts']['importance']['valid_json']) - sum(advanced_judge_outputs['response_dicts']['importance']['valid_json'])} importance call(s)!")
+                importance_response_dict, thinking_quantities = self.importance_check_repair(q, evidences, thinking, final_answer, justification, thinking_quantities, formatted_quantities, log, on_tok, repair=advanced_judge_outputs)
+            else:
+                importance_response_dict = advanced_judge_outputs['response_dicts']['importance']
+
+            # Aggregate results
+            scoping_error_dict = {
+                'valid': True if False not in extractive_response_dict['valid_json'] and False not in non_extractive_response_dict['valid_json'] and False not in importance_response_dict['valid_json'] else False,
+                'scoping_error': False,
+                'score': 0.0, 
+                'per_class': {
+                    'extractive': {'n': 0, 'n_correct': 0, 'n_incorrect': 0, 'n_unknown': 0},
+                    'extrapolative': {'n': 0, 'n_correct': 0, 'n_incorrect': 0, 'n_unknown': 0},
+                    'parametric': {'n': 0, 'n_correct': 0, 'n_incorrect': 0, 'n_unknown': 0},
+                    'unknown': {'n': 0, 'n_correct': 0, 'n_incorrect': 0, 'n_unknown': 0},
+                },
+                'errors': [],
+                'unknowns': [],
+                'thinking_quantities': thinking_quantities,
+                'response_dicts': {
+                    'extractive': extractive_response_dict,
+                    'non_extractive': non_extractive_response_dict,
+                    'importance': importance_response_dict,
+                }
+            }
+
+            try:
+                for t_quantity in thinking_quantities:
+                    for j, t_quantity_type in enumerate(thinking_quantities[t_quantity]):
+                        if t_quantity_type['type'] in  scoping_error_dict['per_class']:
+                            typ = t_quantity_type['type']
+                        else:
+                            typ = "unknown"
+
+                        scoping_error_dict['per_class'][typ]['n'] += 1
+                        if t_quantity_type['correct'] == 'true':
+                            scoping_error_dict['per_class'][typ]['n_correct'] += 1
+                            if t_quantity_type['weight'] and isinstance(t_quantity_type['weight'], float):
+                                scoping_error_dict['score'] += t_quantity_type['weight']
+                        elif t_quantity_type['correct'] == 'false':
+                            scoping_error_dict['per_class'][typ]['n_incorrect'] += 1
+                            # don't add anything to score
+                            scoping_error_dict['scoping_error'] = True
+                            scoping_error_dict['errors'].append({'quantity': t_quantity, 'quantity_i': j, 'type': t_quantity_type['type'], 'correct': t_quantity_type['correct'], 'weight': t_quantity_type['weight'], 'check': t_quantity_type['check']})
+                        else:
+                            scoping_error_dict['per_class'][typ]['n_unknown'] += 1
+                            if t_quantity_type['weight'] and isinstance(t_quantity_type['weight'], float):
+                                scoping_error_dict['score'] += t_quantity_type['weight'] * 0.5
+                            scoping_error_dict['unknowns'].append({'quantity': t_quantity, 'quantity_i': j, 'type': t_quantity_type['type'], 'correct': t_quantity_type['correct'], 'weight': t_quantity_type['weight'], 'check': t_quantity_type['check']})
+            except Exception as e:
+                if log:
+                    print(f"ERROR: getting scoping statistics: {e}")
+                scoping_error_dict['scoping_error'] = None
+                scoping_error_dict['valid'] = False
+            output['advanced_judge'][i] = scoping_error_dict
+
+            if log:
+                print(self.color_text(f"\nTotal time: {time.time() - t0}\n", "93"))
+
+            if i % checkpoint == 0:
+                with open(output_json_file, "w") as f:
+                    json.dump(output, f)
+                print(self.color_text(f"\nSaved checkpoint!\n", "93"))
+
+        with open(output_json_file, "w") as f:
+            json.dump(output, f)
+
+        if log:
+            total_time = time.time() - start_time
+            print(f"Advanced judge repair processing finished in {total_time} seconds...")
 
         return output

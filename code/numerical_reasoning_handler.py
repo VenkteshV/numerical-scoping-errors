@@ -50,7 +50,7 @@ class NumericalReasoningHandler:
         response, total_time = self.llm_handler.generate_response(self.judge_system_prompt, user_prompt, on_token=on_tok)
         return response, total_time
     
-    def run(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=20, golden: bool=False) -> List[Dict[str, Any]]:
+    def run(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=20, golden: bool=False, evidence_split: str="doc") -> List[Dict[str, Any]]:
         """
         Main function for inference processing
 
@@ -60,6 +60,7 @@ class NumericalReasoningHandler:
             log (bool): whether to log intermediate statements
             checkpoint (int): how often to save to the output file
             golden (bool): whether to use golden evidence
+            evidence_split (str): which evidence split to use
         """
         if log:
             start_time = time.time()
@@ -101,16 +102,16 @@ class NumericalReasoningHandler:
                     print(self.color_text(f"{i+start_index} Processing: {query['claim']}", "93"))
 
                 if golden: # if supposed to use the golden evidences
-                    response, total_time = self.process_query(query['claim'], [query['doc']], query['examples'], on_tok=on_tok)
+                    response, total_time = self.process_query(query['claim'], [query[evidence_split]], query['examples'], on_tok=on_tok)
                 else:
-                    response, total_time = self.process_query(query['claim'], query['quantemp_evidences'], query['examples'], on_tok=on_tok)
+                    response, total_time = self.process_query(query['claim'], query[evidence_split], query['examples'], on_tok=on_tok)
             else:
                 if log:
                     print(self.color_text(f"{i+start_index} Processing: {query['question']}", "93"))
                 if golden: # if supposed to use the golden evidences
-                    response, total_time = self.process_query(query['question'], query['doc'], query['examples'], on_tok=on_tok)
+                    response, total_time = self.process_query(query['question'], query[evidence_split], query['examples'], on_tok=on_tok)
                 else:
-                    response, total_time = self.process_query(query['question'], query['evidences'], query['examples'], on_tok=on_tok)
+                    response, total_time = self.process_query(query['question'], query[evidence_split], query['examples'], on_tok=on_tok)
             
             output['outputs'].append({'response': response, 'total_time': total_time})
 
@@ -194,7 +195,7 @@ class NumericalReasoningHandler:
         if log:
             print(f"Finished validation.")
 
-    def judge(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=20, golden: bool=False):
+    def judge(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=20, golden: bool=False, evidence_split: str="doc"):
         """
         Main function for LLM-as-a-judge processing
 
@@ -204,6 +205,7 @@ class NumericalReasoningHandler:
             log (bool): whether to log intermediate statements
             checkpoint (int): how often to save to the output file
             golden (bool): whether to use golden evidence
+            evidence_split (str): which evidence split to use
         """
         if log:
             start_time = time.time()
@@ -252,16 +254,16 @@ class NumericalReasoningHandler:
                     print(self.color_text(f"{i+start_index} Processing: {query['claim']}", "93"))
 
                 if golden: # if supposed to use the golden evidences
-                    response, total_time = self.process_query_judge(query['claim'], [query['doc']], output_json['outputs'][i+start_index]['response'], query['label'], on_tok=on_tok)
+                    response, total_time = self.process_query_judge(query['claim'], [query[evidence_split]], output_json['outputs'][i+start_index]['response'], query['label'], on_tok=on_tok)
                 else:
-                    response, total_time = self.process_query_judge(query['claim'], query['quantemp_evidences'], output_json['outputs'][i+start_index]['response'], query['label'], on_tok=on_tok)
+                    response, total_time = self.process_query_judge(query['claim'], query[evidence_split], output_json['outputs'][i+start_index]['response'], query['label'], on_tok=on_tok)
             else:
                 if log:
                     print(self.color_text(f"{i+start_index} Processing: {query['question']}", "93"))
                 if golden: # if supposed to use the golden evidences
-                    response, total_time = self.process_query_judge(query['question'], query['doc'], output_json['outputs'][i+start_index]['response'], query['answer'], on_tok=on_tok)
+                    response, total_time = self.process_query_judge(query['question'], query[evidence_split], output_json['outputs'][i+start_index]['response'], query['answer'], on_tok=on_tok)
                 else:
-                    response, total_time = self.process_query_judge(query['question'], query['evidences'], output_json['outputs'][i+start_index]['response'], query['answer'], on_tok=on_tok)
+                    response, total_time = self.process_query_judge(query['question'], query[evidence_split], output_json['outputs'][i+start_index]['response'], query['answer'], on_tok=on_tok)
             
             output['judge'].append({'response': response, 'total_time': total_time})
 

@@ -1,7 +1,7 @@
 """Quantity segmenter that returns the quantitiative segments within a claim
 
     'cd D:\Programs\stanford-corenlp\stanford-corenlp-4.5.10'
-    First run CoreNLP server with: 'java -mx12g -cp "*" edu.stanford.nlp.pipeline.StanfordCoreNLPServer -port 9000 -timeout 60000'
+    First run CoreNLP server with: 'java -mx12g -cp "*" edu.stanford.nlp.pipeline.StanfordCoreNLPServer -port 9000 -timeout 600000'
 
     Returns:
         List[str]: List of quantitative segments
@@ -324,7 +324,105 @@ class Segmenter():
         res = " ".join([t for t in res.split(" ") if t != ""])
 
         return res.strip()
-  
+
+    def compute_parse_density(self, text: str):
+        """
+        Compute parse-risk features for a string.
+
+        Returns:
+            dict with:
+                - n_tokens
+                - n_numbers
+                - n_ops
+                - n_alpha
+                - density
+                - max_consecutive_numberish
+                - risk
+                - thresholds
+        """
+        # simple tokenization
+        tokens = re.findall(r"\d[\d,]*\.?\d*|[A-Za-z]+(?:'[A-Za-z]+)?|[%$€£¥]|[=+\-*/×÷()]|[^\s]", text)
+
+        num_re = re.compile(r"^\d[\d,]*\.?\d*$")
+        alpha_re = re.compile(r"[A-Za-z]")
+        op_set = {"*", "=", "+", "/", "×", "÷", "-", "%"}
+
+        n_tokens = len(tokens)
+        n_numbers = sum(bool(num_re.fullmatch(t)) for t in tokens)
+        n_ops = sum(t in op_set for t in tokens)
+        n_alpha = sum(bool(alpha_re.search(t)) for t in tokens)
+
+        # number/symbol pressure relative to normal word content
+        density = (n_numbers + n_ops) / max(n_alpha, 1)
+
+        thresholds = {
+            "safe_max_density": 0.75,
+        }
+
+        if (
+            density <= thresholds["safe_max_density"]
+        ):
+            risk = "safe"
+        else:
+            risk = "risky"
+
+        return {
+            "n_tokens": n_tokens,
+            "n_numbers": n_numbers,
+            "n_ops": n_ops,
+            "n_alpha": n_alpha,
+            "density": density,
+            "risk": risk,
+            "thresholds": thresholds,
+        }
+    
+    def split_for_processing(self, text: str):
+        """
+        Split a string into smaller parts for downstream parsing
+
+        Strategy:
+        1) if input is safe, return as-is.
+        2) Otherwise split on stronger punctuation (. ; ? !)
+
+        Returns:
+            List[str]: smaller chunks to process separately
+        """
+        if not text:
+            return []
+        
+        stats = self.compute_parse_density(text)
+        if stats['risk'] == 'safe':
+            return [text]
+
+        def split_on_pattern(parts: List[str], pattern: str) -> List[str]:
+            out = []
+            for part in parts:
+                sub = [p.strip() for p in re.split(pattern, part) if p.strip(" ,;.")]
+                out.extend(sub if sub else [part])
+            return out
+
+        # 1) stronger punctuation
+        parts = split_on_pattern([text], r"(?<=[\.\;\?\!])\s+")
+
+        # 2) split large/risky parts on commas
+        refined = []
+        for part in parts:
+            st = self.compute_parse_density(part)
+            if st["risk"] != "safe"and st["n_numbers"] >= 20:
+                refined.extend(split_on_pattern([part], r",(?!\d)"))
+            else:
+                refined.append(part)
+
+        # remove duplicates while preserving order
+        deduped = []
+        seen = set()
+        for p in refined:
+            p = p.strip()
+            if p and p not in seen:
+                seen.add(p)
+                deduped.append(p)
+
+        return deduped
 
     def segment(self, text) -> Tuple[List[List[str]], List[Node]]:
         '''Extracts and returns all quantity mentions in a text.
