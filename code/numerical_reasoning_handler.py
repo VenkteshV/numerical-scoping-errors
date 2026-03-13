@@ -50,7 +50,7 @@ class NumericalReasoningHandler:
         response, total_time = self.llm_handler.generate_response(self.judge_system_prompt, user_prompt, on_token=on_tok)
         return response, total_time
     
-    def run(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=20, golden: bool=False, evidence_split: str="doc") -> List[Dict[str, Any]]:
+    def run(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=20, golden: bool=False, evidence_split: str="doc", completion_params: list=None) -> List[Dict[str, Any]]:
         """
         Main function for inference processing
 
@@ -88,6 +88,12 @@ class NumericalReasoningHandler:
             if output['evidence_split'] != evidence_split:
                 print(f"ERROR! Output file exists and has evidence_split not matching desired evidence split {evidence_split} {output['evidence_split']}!")
                 sys.exit()
+
+        # Load correct completion params if given
+        if completion_params:
+            previous_completion_params = self.llm_handler.completion_params
+            self.llm_handler = LLMHandler(completion_params_file=completion_params)
+            output_json['completion_params'] = completion_params
 
         # Start processing
         start_index = len(output['outputs'])
@@ -135,6 +141,9 @@ class NumericalReasoningHandler:
 
         with open(output_json_file, "w") as f:
             json.dump(output, f)
+
+        if completion_params:
+            self.llm_handler.completion_params = previous_completion_params
 
         if log:
             total_time = time.time() - start_time
