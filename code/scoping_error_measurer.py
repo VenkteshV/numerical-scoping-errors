@@ -636,7 +636,7 @@ class ScopingErrorMeasurer:
             with open(output_json_file, "r") as f:
                 output_json = json.load(f)
 
-            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'golden' in output_json and output_json['input_json_file'] == input_json_file and output_json['golden'] == golden:
+            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'golden' in output_json and 'evidence_split' in output_json and output_json['input_json_file'] == input_json_file and output_json['golden'] == golden and output_json['evidence_split'] == evidence_split:
                 if log:
                     print("Inference outputs loaded.")
                 output = output_json
@@ -724,7 +724,7 @@ class ScopingErrorMeasurer:
                     t_quantity_type['weight_check'] = {} # place for weighting outputs
                 
                 if t_quantity in input_quantities: # if exact match of quantity in input dict
-                    for i, t_quantity_type in enumerate(thinking_quantities[t_quantity]):
+                    for t_quantity_type in thinking_quantities[t_quantity]:
                         # Check if matches with any stats in input
                         for i_quantity_type in input_quantities[t_quantity]:
                             if self.segmenter.typed_quantity_similarity(t_quantity_type['quantity_metadata'], i_quantity_type['quantity_metadata']):
@@ -744,7 +744,7 @@ class ScopingErrorMeasurer:
         
                 else:
                     # mark whole group as non extractive
-                    for i, t_quantity_type in enumerate(thinking_quantities[t_quantity]):
+                    for t_quantity_type in thinking_quantities[t_quantity]:
                         non_extractive_formatted_quantities.append(f"STATISTIC ID: {non_extractive_ctr}\n- quantity: {t_quantity}\n- text: '{t_quantity_type['quantity_texts'][0]}'")
                         non_extractive_ctr += 1
                         formatted_quantities.append(f"STATISTIC ID: {ctr}\n- quantity: {t_quantity}\n- text: '{t_quantity_type['quantity_texts'][0]}'")
@@ -764,8 +764,10 @@ class ScopingErrorMeasurer:
             # Aggregate results
             scoping_error_dict = {
                 'valid': True if False not in extractive_response_dict['valid_json'] and False not in non_extractive_response_dict['valid_json'] and False not in importance_response_dict['valid_json'] else False,
-                'scoping_error': False,
-                'score': 0.0, 
+                'raw_scoping_error': False,
+                'raw_score': 0.0,
+                'filtered_scoping_error': False,
+                'filtered_score': 0.0,
                 'per_class': {
                     'extractive': {'n': 0, 'n_correct': 0, 'n_incorrect': 0, 'n_unknown': 0},
                     'extrapolative': {'n': 0, 'n_correct': 0, 'n_incorrect': 0, 'n_unknown': 0},
@@ -783,6 +785,9 @@ class ScopingErrorMeasurer:
             }
 
             try:
+                filter_cutoff = 1 / (2*len(thinking_quantities))
+                filtered_weights = list() # to contain weights for filtered score
+                filtered_muls = list() # to contain the multipliers, 1 (if correct), 0 (if incorrect), 0.5 (if invalid) for filtered score
                 for t_quantity in thinking_quantities:
                     for j, t_quantity_type in enumerate(thinking_quantities[t_quantity]):
                         if t_quantity_type['type'] in  scoping_error_dict['per_class']:
@@ -794,21 +799,37 @@ class ScopingErrorMeasurer:
                         if t_quantity_type['correct'] == 'true':
                             scoping_error_dict['per_class'][typ]['n_correct'] += 1
                             if t_quantity_type['weight'] and isinstance(t_quantity_type['weight'], float):
-                                scoping_error_dict['score'] += t_quantity_type['weight']
+                                scoping_error_dict['raw_score'] += t_quantity_type['weight']
+                                if t_quantity_type['weight'] > filter_cutoff:
+                                    filtered_weights.append(t_quantity_type['weight'])
+                                    filtered_muls.append(1.0)
                         elif t_quantity_type['correct'] == 'false':
                             scoping_error_dict['per_class'][typ]['n_incorrect'] += 1
                             # don't add anything to score
-                            scoping_error_dict['scoping_error'] = True
+                            scoping_error_dict['raw_scoping_error'] = True
                             scoping_error_dict['errors'].append({'quantity': t_quantity, 'quantity_i': j, 'type': t_quantity_type['type'], 'correct': t_quantity_type['correct'], 'weight': t_quantity_type['weight'], 'check': t_quantity_type['check']})
+                            # add to filtered_score
+                            if t_quantity_type['weight'] and isinstance(t_quantity_type['weight'], float) and t_quantity_type['weight'] > filter_cutoff:
+                                filtered_weights.append(t_quantity_type['weight'])
+                                filtered_muls.append(0.0)
+                                scoping_error_dict['filtered_scoping_error'] = True
                         else:
                             scoping_error_dict['per_class'][typ]['n_unknown'] += 1
                             if t_quantity_type['weight'] and isinstance(t_quantity_type['weight'], float):
-                                scoping_error_dict['score'] += t_quantity_type['weight'] * 0.5
+                                scoping_error_dict['raw_score'] += t_quantity_type['weight'] * 0.5
+                                if t_quantity_type['weight'] > filter_cutoff:
+                                    filtered_weights.append(t_quantity_type['weight'])
+                                    filtered_muls.append(0.5)  
                             scoping_error_dict['unknowns'].append({'quantity': t_quantity, 'quantity_i': j, 'type': t_quantity_type['type'], 'correct': t_quantity_type['correct'], 'weight': t_quantity_type['weight'], 'check': t_quantity_type['check']})
+
+                # Compute filtered scoping error score
+                mul = (1.0 / sum(filtered_weights)) if filtered_weights else 0.0
+                scoping_error_dict['filtered_score'] = sum([s*m*mul for s, m in zip(filtered_weights, filtered_muls)])
             except Exception as e:
                 if log:
                     print(f"ERROR: getting scoping statistics: {e}")
-                scoping_error_dict['scoping_error'] = None
+                scoping_error_dict['raw_scoping_error'] = None
+                scoping_error_dict['filtered_scoping_error'] = None
                 scoping_error_dict['valid'] = False
             output['advanced_judge'].append(scoping_error_dict)
 
@@ -1237,7 +1258,7 @@ class ScopingErrorMeasurer:
             with open(output_json_file, "r") as f:
                 output_json = json.load(f)
 
-            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'golden' in output_json and output_json['input_json_file'] == input_json_file and output_json['golden'] == golden and 'advanced_judge' in output_json:
+            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'golden' in output_json and 'evidence_split' in output_json and output_json['input_json_file'] == input_json_file and output_json['golden'] == golden and output_json['evidence_split'] == evidence_split and 'advanced_judge' in output_json:
                 if log:
                     print("Inference outputs loaded.")
                 output = output_json
@@ -1295,7 +1316,7 @@ class ScopingErrorMeasurer:
 
             for t_quantity in thinking_quantities:
                 if t_quantity in input_quantities: # if exact match of quantity in input dict
-                    for i, t_quantity_type in enumerate(thinking_quantities[t_quantity]):                           
+                    for t_quantity_type in thinking_quantities[t_quantity]:                           
                         if t_quantity_type["type"] == "extractive":
                             extractive_formatted_quantities.append(f"STATISTIC ID: {extractive_ctr}\n- quantity: {t_quantity}\n- text: '{t_quantity_type['quantity_texts'][0]}'")
                             extractive_ctr += 1
@@ -1309,7 +1330,7 @@ class ScopingErrorMeasurer:
         
                 else:
                     # mark whole group as non extractive
-                    for i, t_quantity_type in enumerate(thinking_quantities[t_quantity]):
+                    for t_quantity_type in thinking_quantities[t_quantity]:
                         non_extractive_formatted_quantities.append(f"STATISTIC ID: {non_extractive_ctr}\n- quantity: {t_quantity}\n- text: '{t_quantity_type['quantity_texts'][0]}'")
                         non_extractive_ctr += 1
                         formatted_quantities.append(f"STATISTIC ID: {ctr}\n- quantity: {t_quantity}\n- text: '{t_quantity_type['quantity_texts'][0]}'")
@@ -1338,8 +1359,10 @@ class ScopingErrorMeasurer:
             # Aggregate results
             scoping_error_dict = {
                 'valid': True if False not in extractive_response_dict['valid_json'] and False not in non_extractive_response_dict['valid_json'] and False not in importance_response_dict['valid_json'] else False,
-                'scoping_error': False,
-                'score': 0.0, 
+                'raw_scoping_error': False,
+                'raw_score': 0.0, 
+                'filtered_scoping_error': False,
+                'filtered_score': 0.0,
                 'per_class': {
                     'extractive': {'n': 0, 'n_correct': 0, 'n_incorrect': 0, 'n_unknown': 0},
                     'extrapolative': {'n': 0, 'n_correct': 0, 'n_incorrect': 0, 'n_unknown': 0},
@@ -1357,6 +1380,9 @@ class ScopingErrorMeasurer:
             }
 
             try:
+                filter_cutoff = 1 / (2*len(thinking_quantities))
+                filtered_weights = list() # to contain weights for filtered score
+                filtered_muls = list() # to contain the multipliers, 1 (if correct), 0 (if incorrect), 0.5 (if invalid) for filtered score
                 for t_quantity in thinking_quantities:
                     for j, t_quantity_type in enumerate(thinking_quantities[t_quantity]):
                         if t_quantity_type['type'] in  scoping_error_dict['per_class']:
@@ -1368,23 +1394,39 @@ class ScopingErrorMeasurer:
                         if t_quantity_type['correct'] == 'true':
                             scoping_error_dict['per_class'][typ]['n_correct'] += 1
                             if t_quantity_type['weight'] and isinstance(t_quantity_type['weight'], float):
-                                scoping_error_dict['score'] += t_quantity_type['weight']
+                                scoping_error_dict['raw_score'] += t_quantity_type['weight']
+                                if t_quantity_type['weight'] > filter_cutoff:
+                                    filtered_weights.append(t_quantity_type['weight'])
+                                    filtered_muls.append(1.0)
                         elif t_quantity_type['correct'] == 'false':
                             scoping_error_dict['per_class'][typ]['n_incorrect'] += 1
-                            # don't add anything to score
-                            scoping_error_dict['scoping_error'] = True
+                            # don't add anything to raw_score
+                            scoping_error_dict['raw_scoping_error'] = True
                             scoping_error_dict['errors'].append({'quantity': t_quantity, 'quantity_i': j, 'type': t_quantity_type['type'], 'correct': t_quantity_type['correct'], 'weight': t_quantity_type['weight'], 'check': t_quantity_type['check']})
+                            # add to filtered_score
+                            if t_quantity_type['weight'] and isinstance(t_quantity_type['weight'], float) and t_quantity_type['weight'] > filter_cutoff:
+                                filtered_weights.append(t_quantity_type['weight'])
+                                filtered_muls.append(0.0)
+                                scoping_error_dict['filtered_scoping_error'] = True
                         else:
                             scoping_error_dict['per_class'][typ]['n_unknown'] += 1
                             if t_quantity_type['weight'] and isinstance(t_quantity_type['weight'], float):
-                                scoping_error_dict['score'] += t_quantity_type['weight'] * 0.5
+                                scoping_error_dict['raw_score'] += t_quantity_type['weight'] * 0.5
+                                if t_quantity_type['weight'] > filter_cutoff:
+                                    filtered_weights.append(t_quantity_type['weight'])
+                                    filtered_muls.append(0.5)  
                             scoping_error_dict['unknowns'].append({'quantity': t_quantity, 'quantity_i': j, 'type': t_quantity_type['type'], 'correct': t_quantity_type['correct'], 'weight': t_quantity_type['weight'], 'check': t_quantity_type['check']})
+            
+                # Compute filtered scoping error score
+                mul = (1.0 / sum(filtered_weights)) if filtered_weights else 0.0
+                scoping_error_dict['filtered_score'] = sum([s*m*mul for s, m in zip(filtered_weights, filtered_muls)])
             except Exception as e:
                 if log:
                     print(f"ERROR: getting scoping statistics: {e}")
-                scoping_error_dict['scoping_error'] = None
+                scoping_error_dict['raw_scoping_error'] = None
+                scoping_error_dict['filtered_scoping_error'] = None
                 scoping_error_dict['valid'] = False
-            output['advanced_judge'][i] = scoping_error_dict
+            output['advanced_judge'][i+start_index] = scoping_error_dict
 
             if log:
                 print(self.color_text(f"\nTotal time: {time.time() - t0}\n", "93"))

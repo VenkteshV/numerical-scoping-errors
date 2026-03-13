@@ -79,7 +79,17 @@ class NumericalReasoningHandler:
                 print(f"ERROR! Output file exists and has results not matching current input file!")
                 sys.exit()
         else:
-            output = {'input_json_file': input_json_file, 'golden': golden, 'outputs': []}
+            output = {'input_json_file': input_json_file, 'golden': golden, 'outputs': [], 'evidence_split': evidence_split}
+
+        # Check evidence split
+        if 'evidence_split' not in output:
+            output['evidence_split'] = evidence_split
+        else:
+            if output['evidence_split'] != evidence_split:
+                print(f"ERROR! Output file exists and has evidence_split not matching desired evidence split {evidence_split} {output['evidence_split']}!")
+                sys.exit()
+
+        # Start processing
         start_index = len(output['outputs'])
         if log:
             print(f"Starting from claim with index: {start_index}.")
@@ -154,7 +164,7 @@ class NumericalReasoningHandler:
 
         if self.task == "fc":
             # validate fc
-            n_valid, cf_matrix, accuracy, weighted_f1, macro_f1, per_class_f1s, per_taxonomy_f1s = self.validation_handler.validate_classification(input_json, final_output_dicts, log=log)
+            n_valid, cf_matrix, accuracy, weighted_f1, macro_f1, per_class_f1s, per_taxonomy_f1s, final_output_dicts = self.validation_handler.validate_classification(input_json, final_output_dicts, log=log)
 
             output_json['validation'] = {
                 'n_valid': n_valid,
@@ -171,7 +181,7 @@ class NumericalReasoningHandler:
             }
         else:
             # validate qa
-            n_valid, em_accuracy, n_invalid_ground_truth = self.validation_handler.validate_exact_match(input_json, final_output_dicts, log=log)
+            n_valid, em_accuracy, n_invalid_ground_truth, final_output_dicts = self.validation_handler.validate_exact_match(input_json, final_output_dicts, log=log)
 
             output_json['validation'] = {
                 'n_valid': n_valid,
@@ -216,7 +226,7 @@ class NumericalReasoningHandler:
             with open(output_json_file, "r") as f:
                 output_json = json.load(f)
 
-            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'golden' in output_json and output_json['input_json_file'] == input_json_file and output_json['golden'] == golden:
+            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'golden' in output_json and 'evidence_split' in output_json and output_json['input_json_file'] == input_json_file and output_json['golden'] == golden and output_json['evidence_split'] == evidence_split:
                 if log:
                     print("Inference outputs loaded.")
                 output = output_json

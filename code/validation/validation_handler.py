@@ -258,6 +258,7 @@ class ValidationHandler:
             if output_dict['valid_response']: # include only the valid outputs
                 labels.append(input_dict['label'])
                 predictions.append(output_dict['label'])
+                output_dict['correct'] = True if input_dict['label'] == output_dict['label'] else False
 
         if log:
             print(f"Excluded {len(input_json) - len(labels)} invalid responses. Using {len(labels)} valid responses.\n")
@@ -294,7 +295,7 @@ class ValidationHandler:
             print(f"Per-Class F1s: {per_class_f1s}")
             print(f"Per-Taxonomy F1s: {per_taxonomy_f1s}")
 
-        return len(labels), cf_matrix.tolist(), accuracy, weighted_f1, macro_f1, per_class_f1s, per_taxonomy_f1s
+        return len(labels), cf_matrix.tolist(), accuracy, weighted_f1, macro_f1, per_class_f1s, per_taxonomy_f1s, output_dicts
     
     def validate_exact_match(self, input_json: List[Dict[str, Any]], output_dicts: List[Dict[str, Any]], log: bool):
         """
@@ -325,13 +326,17 @@ class ValidationHandler:
                 if 'yes' in label or 'no' in label:
                     if label == prediction: # predicted yes/no correctly
                         matches += 1
+                        output_dict['correct'] = True
                     else: # predicted yes/no incorrectly
                         mismatches += 1
+                        output_dict['correct'] = False
                 else:
                     if self._equal_numbers(prediction, label, log=log): # numbers are equal (or close enough)
                         matches += 1
+                        output_dict['correct'] = True
                     else: # numbers are unequal
                         mismatches += 1
+                        output_dict['correct'] = False
 
         em_accuracy = matches / (mismatches + matches)
 
@@ -340,7 +345,7 @@ class ValidationHandler:
 
             print(f"Exact match accuracy: {em_accuracy}")
 
-        return n_valid, em_accuracy, n_invalid_ground_truth
+        return n_valid, em_accuracy, n_invalid_ground_truth, output_dicts
     
     def parse_judge_output(self, output_json: Dict[str, Any], log: bool):
         """
