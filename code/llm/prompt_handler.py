@@ -77,7 +77,22 @@ Give the reply in the following format:
 
 == YOUR OUTPUT ==
 """
-                
+            elif variant == "judge_new":
+                user_message = f"""Judge the following fact-checking output for numerical scoping failures. Do NOT re-run the full fact-check from scratch unless needed. Detect and precisely localize scoping failures for each statistic in the fact-checking LLM's output, only if present. Output only the JSON with no other text.
+== INPUTS ==
+[Claim]
+{query}
+
+[Evidence]
+{self.get_evidences(evidence_list)} 
+
+[Fact-checking LLM Output: Reasoning Trace, LLM Predicted Label, and LLM Justification]
+{metadata['response']}
+== END INPUTS ==
+
+== YOUR OUTPUT ==
+""" 
+
             elif variant=="non_extractive_check":
                 statistics = "\n\n".join(metadata['statistics'])
                 user_message = f"""For each STATISTIC (IDs {metadata['idxs'][0]} - {metadata['idxs'][1]}), classify STATISTIC as extrapolative vs parametric, then evaluate correctness per the system rules. Return ONLY the JSON.
@@ -190,6 +205,21 @@ Give the reply in the following format:
 
 [Ground Truth Answer]
 {self.label_map[metadata['actual_label']] if metadata['actual_label'] in self.label_map else metadata['actual_label']}
+== END INPUTS ==
+
+== YOUR OUTPUT ==
+"""
+            elif variant == "judge_new":
+                user_message = f"""Judge the following question-answering output for numerical scoping failures. Do NOT re-answer the question from scratch unless needed. Detect and precisely localize scoping failures for each statistic in the question-answering LLM's output, only if present. Output only the JSON with no other text.
+== INPUTS ==
+[Question]
+{query}
+
+[Evidence]
+{self.get_evidences(evidence_list)} 
+
+[Question-Answering LLM Output: Reasoning Trace, LLM Predicted Answer, and LLM Justification]
+{metadata['response']}
 == END INPUTS ==
 
 == YOUR OUTPUT ==

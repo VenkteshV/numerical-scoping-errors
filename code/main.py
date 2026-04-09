@@ -53,6 +53,8 @@ def run(args):
             nr_handler.judge(args.input_json_file, output_file, log=args.log, golden=args.gold, evidence_split=args.split)
             if args.validation:
                 nr_handler.validate_judge(args.input_json_file, output_file, log=args.log)
+        if args.judge_new:
+            nr_handler.judge_new(args.input_json_file, output_file, log=args.log, golden=args.gold, evidence_split=args.split)
         if args.advanced_judge:
             scoping_error_measurer = ScopingErrorMeasurer(task=args.task, platform=args.platform)
             scoping_error_measurer.run(args.input_json_file, output_file, log=args.log, golden=args.gold, evidence_split=args.split)
@@ -73,6 +75,7 @@ if __name__ == "__main__":
     parser.add_argument("-a", "--advanced-judge", dest="advanced_judge", type=str2bool, default=False, help="Whether to perform advanced LLM-as-a-judge on the outputs of the main inference loop to measure scoping errors")
     parser.add_argument("-r", "--repair", dest="repair", type=str2bool, default=False, help="Whether to repair advanced LLM-as-a-judge to measure scoping errors")
     parser.add_argument("-c", "--completion-params", dest="completion_params", nargs="+", type=str, default=None, help="List of completion params to use for each test-time-scaling run")
+    parser.add_argument("-jn", "--judge-new", dest="judge_new", type=str2bool, default=False, help="Whether to perform LLM-as-a-judge NEW on the outputs of the main inference loop")
     args = parser.parse_args()
 
     run(args)

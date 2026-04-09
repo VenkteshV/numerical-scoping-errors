@@ -33,6 +33,7 @@ class NumericalReasoningHandler:
         self.prompt_handler = PromptHandler(task=task)
         self.system_prompt = self.prompt_handler.get_system_message()
         self.judge_system_prompt = self.prompt_handler.get_system_message(variant="judge")
+        self.judge_new_system_prompt = self.prompt_handler.get_system_message(variant="judge_new")
 
     def color_text(self, text: str, color_code: str) -> str:
         """Function used to color cmd line text."""
@@ -48,6 +49,12 @@ class NumericalReasoningHandler:
         """Runs a single fact-check/qa LLM-as-a-judge query."""
         user_prompt = self.prompt_handler.get_user_message(query, evidence_list, fc_example_list=None, metadata={'response': response, 'actual_label': actual_label}, variant="judge")
         response, total_time = self.llm_handler.generate_response(self.judge_system_prompt, user_prompt, on_token=on_tok)
+        return response, total_time
+    
+    def process_query_judge_new(self, query: str, evidence_list: List[str], response: str, actual_label: str, on_tok=None) -> str:
+        """Runs a single fact-check/qa LLM-as-a-judge query."""
+        user_prompt = self.prompt_handler.get_user_message(query, evidence_list, fc_example_list=None, metadata={'response': response, 'actual_label': actual_label}, variant="judge_new")
+        response, total_time = self.llm_handler.generate_response(self.judge_new_system_prompt, user_prompt, on_token=on_tok)
         return response, total_time
     
     def run(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=20, golden: bool=False, evidence_split: str="doc", completion_params: list=None) -> List[Dict[str, Any]]:
@@ -93,7 +100,7 @@ class NumericalReasoningHandler:
         if completion_params:
             previous_completion_params = self.llm_handler.completion_params
             self.llm_handler = LLMHandler(completion_params_file=completion_params)
-            output_json['completion_params'] = completion_params
+            output['completion_params'] = completion_params
 
         # Start processing
         start_index = len(output['outputs'])
@@ -347,4 +354,94 @@ class NumericalReasoningHandler:
 
         if log:
             print(f"Finished judge validation.")
+
+
+    def judge_new(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=20, golden: bool=False, evidence_split: str="doc"):
+        """
+        Main function for LLM-as-a-judge processing
+
+        Args:
+            input_json_file (str): json file that contains inputs
+            output_json_file (str): json file to save outputs
+            log (bool): whether to log intermediate statements
+            checkpoint (int): how often to save to the output file
+            golden (bool): whether to use golden evidence
+            evidence_split (str): which evidence split to use
+        """
+        if log:
+            start_time = time.time()
+            print(f"Starting {self.task} JUDGE NEW processing...")
+
+        # Load outputs and previous checkpoint
+        if os.path.isfile(output_json_file):
+            with open(output_json_file, "r") as f:
+                output_json = json.load(f)
+
+            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'golden' in output_json and 'evidence_split' in output_json and output_json['input_json_file'] == input_json_file and output_json['golden'] == golden and output_json['evidence_split'] == evidence_split:
+                if log:
+                    print("Inference outputs loaded.")
+                output = output_json
+            else:
+                print(f"ERROR! Output file exists and has results not matching current input file!")
+                sys.exit()
+        else:
+            print(f"ERROR! Output file does not exist!")
+            sys.exit()
+
+        if 'judge_new' in output:
+            start_index = len(output['judge_new'])
+        else:
+            output['judge_new'] = []
+            start_index = 0
+        
+        if log:
+            print(f"Starting judge_new from claim with index: {start_index}.")
+            
+        # Load input file
+        with open(input_json_file) as f:
+            input_json = json.load(f)
+
+        # Set up intermediate writing if user wants logs
+        def on_tok(token):
+            print(self.color_text(token, '96'), end="") # colored light cyan
+
+        if not log:
+            on_tok = None
+
+        # Main judge loop
+        for i, query in enumerate(input_json[start_index:]):
+            if self.task == "fc":
+                if log:
+                    print(self.color_text(f"{i+start_index} Processing: {query['claim']}", "93"))
+
+                if golden: # if supposed to use the golden evidences
+                    response, total_time = self.process_query_judge_new(query['claim'], [query[evidence_split]], output_json['outputs'][i+start_index]['response'], query['label'], on_tok=on_tok)
+                else:
+                    response, total_time = self.process_query_judge_new(query['claim'], query[evidence_split], output_json['outputs'][i+start_index]['response'], query['label'], on_tok=on_tok)
+            else:
+                if log:
+                    print(self.color_text(f"{i+start_index} Processing: {query['question']}", "93"))
+                if golden: # if supposed to use the golden evidences
+                    response, total_time = self.process_query_judge_new(query['question'], query[evidence_split], output_json['outputs'][i+start_index]['response'], query['answer'], on_tok=on_tok)
+                else:
+                    response, total_time = self.process_query_judge_new(query['question'], query[evidence_split], output_json['outputs'][i+start_index]['response'], query['answer'], on_tok=on_tok)
+            
+            output['judge_new'].append({'response': response, 'total_time': total_time})
+
+            if log:
+                print(self.color_text(f"\nTotal time: {total_time}\n", "93"))
+
+            if i % checkpoint == 0:
+                with open(output_json_file, "w") as f:
+                    json.dump(output, f)
+                print(self.color_text(f"\nSaved checkpoint!\n", "93"))
+
+        with open(output_json_file, "w") as f:
+            json.dump(output, f)
+
+        if log:
+            total_time = time.time() - start_time
+            print(f"Judge new processing finished in {total_time} seconds...")
+
+        return output
 
