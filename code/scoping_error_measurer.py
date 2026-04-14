@@ -48,18 +48,6 @@ class ScopingErrorMeasurer:
         """Function used to color cmd line text."""
         return f"\033[{color_code}m{text}\033[0m"
     
-    # def process_query(self, query: str, evidence_list: List[str], fc_example_list: List[Dict[str, Any]], on_tok=None) -> str:
-    #     """Runs a single fact-check/qa query."""
-    #     user_prompt = self.prompt_handler.get_user_message(query, evidence_list, fc_example_list)
-    #     response, total_time = self.llm_handler.generate_response(self.system_prompt, user_prompt, on_token=on_tok)
-    #     return response, total_time
-    
-    # def process_query_judge(self, query: str, evidence_list: List[str], response: str, actual_label: str, on_tok=None) -> str:
-    #     """Runs a single fact-check/qa LLM-as-a-judge query."""
-    #     user_prompt = self.prompt_handler.get_user_message(query, evidence_list, fc_example_list=None, metadata={'response': response, 'actual_label': actual_label}, variant="judge")
-    #     response, total_time = self.llm_handler.generate_response(self.judge_system_prompt, user_prompt, on_token=on_tok)
-    #     return response, total_time
-    
     def set_up_input_json_quantities(self, input_json_file: str, input_json_file_quantities: str, evidence_split: str, checkpoint: int=20, log: bool = False):
         """
         Function to set up inputs file. Will extract quantities if not complete.
