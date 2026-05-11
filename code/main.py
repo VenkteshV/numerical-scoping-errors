@@ -62,6 +62,8 @@ def run(args):
                 scoping_error_measurer.repair(args.input_json_file, output_file, log=args.log, golden=args.gold, evidence_split=args.split)
         if args.verifier:
             nr_handler.verify(args.input_json_file, output_file, log=args.log, golden=args.gold, evidence_split=args.split, verifier_config_path=args.verifier)
+        if args.verifier_multitask:
+            nr_handler.verify_multitask(args.input_json_file, output_file, log=args.log, golden=args.gold, evidence_split=args.split, verifier_config_path=args.verifier_multitask)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fact-checking")
@@ -79,6 +81,7 @@ if __name__ == "__main__":
     parser.add_argument("-c", "--completion-params", dest="completion_params", nargs="+", type=str, default=None, help="List of completion params to use for each test-time-scaling run")
     parser.add_argument("-jn", "--judge-new", dest="judge_new", type=str2bool, default=False, help="Whether to perform LLM-as-a-judge NEW on the outputs of the main inference loop")
     parser.add_argument("-ve", "--verifier", dest="verifier", type=str, default=None, help="Whether to perform ranking verifier on the outputs of the main inference loop, if exists set to toml config file of verifier")
+    parser.add_argument("-vem", "--verifier-multitask", dest="verifier_multitask", type=str, default=None, help="Whether to perform multitask verifier on the outputs of the main inference loop, if exists set to toml config file of multitask verifier")
     args = parser.parse_args()
 
     run(args)

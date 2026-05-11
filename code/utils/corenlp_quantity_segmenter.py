@@ -613,7 +613,7 @@ class Segmenter():
 
     def normalize_quantity_phrase(self, phrase: str):
         """
-        Normalizes a quanitty phrase extracting percent, monetary, and numerical metadata.
+        Normalizes a quantity phrase extracting percent, monetary, and numerical metadata.
 
         Args:
             phrase (str): numerical text to extract from

@@ -678,7 +678,7 @@ class ScopingErrorMeasurer:
             if stats['risk'] != 'safe': # text is not safe to process
                 parts = self.segmenter.split_for_processing(thinking)
                 new_text = " ".join(parts)
-                if self.segmenter.compute_parse_density(new_text) != 'safe':
+                if self.segmenter.compute_parse_density(new_text)['risk'] != 'safe':
                     # new text is also not safe to process
                     if log:
                         print(f"Thinking and new_text too dense for quantity segmenter. Converted {thinking} to {parts}")
@@ -1283,7 +1283,7 @@ class ScopingErrorMeasurer:
             if log:
                 print(self.color_text(f"{i+start_index} Repair Processing: {query['claim'] if self.task == 'fc' else query['question']}", "93"))
             
-            if 'valid' in advanced_judge_outputs and advanced_judge_outputs['valid'] == True:
+            if 'valid' in advanced_judge_outputs and advanced_judge_outputs['valid'] == True and 'filtered_scoping_error' in advanced_judge_outputs:
                 continue
 
             t0 = time.time()
