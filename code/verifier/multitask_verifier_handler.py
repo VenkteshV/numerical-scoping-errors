@@ -7,7 +7,7 @@ from peft import LoraConfig, get_peft_model
 
 class MultiTaskCustomClassifier(torch.nn.Module):
     """
-    Load the base LM and add classification head on top of it.
+    Load the base LM and add two classification heads on top of it.
     """
     def __init__(self, model_name, num_labels=2, hidden_dim = None, dropout_value = 0.1, freeze_base_layer = True, use_lora = False, 
                  is_base_encoder = True, lora_rank = 8, lora_alpha = 16):
@@ -84,8 +84,8 @@ class MultiTaskVerifierHandler:
         self.config = toml.load(config_path)['configuration']
 
         # === Paths from config ===
-        self.model_path = f"verifier/model_output/{self.config['output_dir']}/"
-        self.model_weights = f"verifier/model_output/{self.config['output_dir']}/model_weights"
+        self.model_path = f"{self.config['output_dir']}"
+        self.model_weights = f"{self.config['output_dir']}/model_weights"
 
         # === Device configuration (use GPU if available) ===
         self.device = "cuda" if torch.cuda.is_available() else "cpu"

@@ -9,4 +9,4 @@ lora_rank = 8
 lora_alpha = 16
 max_length = 1024
 batch_size = 12
-output_dir = "llama3B-lora-finqa"
+output_dir = "../../../../../tts/MODELS/model_output/llama3B-lora-finqa"

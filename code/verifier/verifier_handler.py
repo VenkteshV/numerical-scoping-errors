@@ -76,8 +76,8 @@ class VerifierHandler:
         self.config = toml.load(config_path)['configuration']
 
         # === Paths from config ===
-        self.model_path = f"verifier/model_output/{self.config['output_dir']}/"
-        self.model_weights = f"verifier/model_output/{self.config['output_dir']}/model_weights"
+        self.model_path = f"{self.config['output_dir']}"
+        self.model_weights = f"{self.config['output_dir']}/model_weights"
 
         # === Device configuration (use GPU if available) ===
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
