@@ -31,7 +31,7 @@ class PromptHandler:
         Gets the system message prompt.
         
         Args:
-            variant (str): which system prompt to retrieve: "base", "judge", "non_extractive_check" or "extractive_check"
+            variant (str): which system prompt to retrieve: "base", "judge", "non_extractive_check", "extractive_check", "importance_check", or "judge_new"
         """
         
         return self.system_prompts[variant][self.task]

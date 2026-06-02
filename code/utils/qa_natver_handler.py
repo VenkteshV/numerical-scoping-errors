@@ -5,6 +5,8 @@ from typing import Dict, Any, List, Optional, Tuple, Union
 
 class QANatVerHandler:
     """
+    (UNUSED)
+    
     Class that handles connections to QA-NatVer.
 
     Expected server endpoint:

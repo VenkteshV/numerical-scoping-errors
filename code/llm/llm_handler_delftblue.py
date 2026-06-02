@@ -33,7 +33,9 @@ class StopOnStrings(StoppingCriteria):
 
 class LLMHandler:
     """
-    Class that handles local GPU inference using Hugging Face Transformers.
+    (UNUSED)
+    
+    Class that handles local GPU inference using Hugging Face Transformers. Some functionality LMStudio specific functionality is lost.
 
     Internal States:
     - completion_params: json of parameters for the LLM
