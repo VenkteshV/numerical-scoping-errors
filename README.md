@@ -1,5 +1,7 @@
 # Investigating Scoping Errors in Open-Domain Numerical Reasoning
 
+<img src="./assets/banner.png" alt="Scoping landscape banner" style="width:100%; height:auto;">
+
 A framework for generating LLM responses for numerical fact-checking and question answering tasks, detecting scoping errors at a statistic- and trace-level, distilling that scoping signal into smaller student verifiers, and using scoping signals to improve downstream performance through test-time scaling.
 
 ## Overview
@@ -7,10 +9,20 @@ A framework for generating LLM responses for numerical fact-checking and questio
 This repository provides code for:
 
 1. Prompting pre-trained LLMs to either fact-check complex numerical claims or answer multi-step numerical questions using evidence.
-2. Detecting scoping errors in fact-checking or QA reasoning traces at a statistic- and trace-level using a hybrid LLM-as-a-Judge pipeline.
-3. Distilling correctness and scoping error signals into outcome reward models.
-4. Using detected scoping error signals to select candidate LLM reasoning traces in test-time scaling.
 
+<img src="./assets/pipeline.png" alt="Inference pipeline" style="width:50%; height:auto;">
+
+3. Detecting scoping errors in fact-checking or QA reasoning traces at a statistic- and trace-level using a hybrid LLM-as-a-Judge pipeline.
+
+<img src="./assets/judge_pipeline.png" alt="Hybrid LLM-as-a-Judge pipeline" style="width:50%; height:auto;">
+
+4. Distilling correctness and scoping error signals into outcome reward models.
+
+<img src="./assets/distillation.png" alt="Distillation into Scoping-Aware ORMs" style="width:50%; height:auto;">
+
+5. Using detected scoping error signals to select candidate LLM reasoning traces in test-time scaling.
+
+<img src="./assets/variants.png" alt="Scoping-aware mitigation variants" style="width:50%; height:auto;">
 
 #### Key Features:
 
@@ -21,7 +33,9 @@ This repository provides code for:
 
 #### Research Context:
 
-This implementation is part of Master's thesis research on improving the reasoning capabilities of Large Language Models for real-world open-domain numerical tasks. The framework specifically investigates numerical scoping errors in complex tasks that require multi-step reasoning and numerical understanding.
+This implementation is part of Master's thesis research on improving the reasoning capabilities of Large Language Models for real-world open-domain numerical tasks. The framework specifically investigates numerical scoping errors in complex tasks that require multi-step reasoning and numerical understanding. Here is the abstract of the associated thesis:
+
+> Numerical information shapes how people interpret real-world events, evaluate claims, and make decisions. As Large Language Models (LLMs) and Retrieval-Augmented Generation (RAG) systems are increasingly used for open-domain information seeking, their ability to reason reliably over quantities has become critical. Yet, even when models retrieve relevant evidence and produce fluent chain-of-thought reasoning, they still often reach incorrect conclusions failing to reason about the numbers in the right context. This work investigates _numerical scoping errors_, a reasoning failure where a model incorrectly binds a quantity to the wrong referent, time frame, unit, population, condition, or source. In high impact settings, a single mis-scoped number can change the meaning of a conclusion, turning a statistic into a misleading financial signal, an unsafe medical recommendation, or a false public claim. This makes numerical scoping errors an important reasoning failure to investigate. When performing numerical fact-checking (FC) and question-answering (QA), this work identifies scoping errors as a common and consequential failure mode in generated LLM reasoning traces across tasks. In human analysis, scoping errors appeared in 44.7\% of numerical FC and 26.8\% of numerical QA traces, with 35.3\% and 81.8\% of these errors, respectively, judged to contribute to incorrect final answers. To detect these failures at scale, this work develops a hybrid LLM-as-a-Judge pipeline that decomposes reasoning traces into quantities, verifies whether they are correctly scoped based on their source type, and aggregates statistic-level judgements into trace-level labels. The pipeline achieves moderate agreement with human annotations, but can be expensive to leverage. To explore more efficient alternatives, the hybrid pipeline's scoping detection signal was distilled into smaller conservative student models while processing traces around 200 times faster. Finally, this work evaluates whether scoping-aware reward signals can improve downstream performance through test-time scaling, producing modest improvements, especially when combined with correctness-based selection. Overall, this work shows that numerical reasoning failures are not merely errors of calculation but errors of context. Improving open-domain numerical reasoning will require systems that not only retrieve evidence and generate reasoning, but also track what each number means, where it comes from, and under which conditions it is valid.
 
 ## Repository Structure
 
@@ -48,7 +62,7 @@ root/
 ├── data/
 │   ├── finqa/
 │   │   └── Financial Question-Answering questions, answers, evidences, and extracted quantities; train & test splits
-│   ├── quantemp++/
+│   ├── quantemp/
 │       └── Numerical Fact-Checking claims, labels, evidences, and extracted quantities; train & test splits
 └── output/
     └── Generated inference results and evaluations
@@ -113,11 +127,13 @@ pip install -r requirements.txt
 
 ## Usage
 
+The following commands are all run from the `code` directory.
+
 ### Standard Inference
 
 Run basic fact-checking or question-answering inference with a desired dataset and evidence split:
 ```
-python main.py --input-json-file ../data/[finqa|quantemp]/test.json --output-json-file outputs/output.json --task [fc|qa] --split [gold|reranked|qrel|whole_document|fsr]
+python main.py --input-json-file ../data/[finqa|quantemp]/test_[finqa|quantemp].json --output-json-file outputs/output.json --task [fc|qa] --split [gold|reranked|qrel|whole_document|fsr]
 ```
 _Note: make sure the correct LLM is loaded into LMStudio for inference!_
 
@@ -130,7 +146,7 @@ Parameters:
 ### Straight LLM-as-a-Judge Failure Detection
 Run straight LLM-as-a-Judge processing to find scoping, arithmetic, and looping errors in reasoning traces:
 ```
-python main.py --input-json-file ../data/[finqa|quantemp]/test.json --output-json-file outputs/output.json --task [fc|qa] --split [gold|reranked|qrel|whole_document|fsr] --judge True
+python main.py --input-json-file ../data/[finqa|quantemp]/test_[finqa|quantemp].json --output-json-file outputs/output.json --task [fc|qa] --split [gold|reranked|qrel|whole_document|fsr] --judge True
 ```
 _Note: output json must match existing json file which already contains standard inference outputs. Ensure the judge LLM is loaded in LMStudio!_
 
@@ -144,7 +160,7 @@ Parameters:
 ### Hybrid LLM-as-a-Judge Pipeline Scoping Failure Detection
 Run hybrid LLM-as-a-Judge pipeline to find scoping errors at a statistic- and trace-level in reasoning traces:
 ```
-python main.py --input-json-file ../data/[finqa|quantemp]/test.json --output-json-file outputs/output.json --task [fc|qa] --split [gold|reranked|qrel|whole_document|fsr] --advanced-judge True --repair True
+python main.py --input-json-file ../data/[finqa|quantemp]/test_[finqa|quantemp].json --output-json-file outputs/output.json --task [fc|qa] --split [gold|reranked|qrel|whole_document|fsr] --advanced-judge True --repair True
 ```
 _Note: output json must match existing json file which already contains standard inference outputs. Ensure the judge LLM is loaded in LMStudio! Ensure the CoreNLP service is running!_
 
@@ -159,7 +175,7 @@ Parameters:
 ### Single-Task Outcome Reward Model Correctness/Scoping Scoring
 Run distilled single-task ORMs to judge reasoning traces for general correctness and scoping quality:
 ```
-python main.py --input-json-file ../data/[finqa|quantemp]/test.json --output-json-file outputs/output.json --task [fc|qa] --split [gold|reranked|qrel|whole_document|fsr] --verifier verifier/[desired config name].toml
+python main.py --input-json-file ../data/[finqa|quantemp]/test_[finqa|quantemp].json --output-json-file outputs/output.json --task [fc|qa] --split [gold|reranked|qrel|whole_document|fsr] --verifier verifier/[desired config name].toml
 ```
 _Note: output json must match existing json file which already contains standard inference outputs. Ensure the verifier path is correct and the model weights exist!_
 
@@ -173,7 +189,7 @@ Parameters:
 ### Multi-Task Outcome Reward Model Correctness/Scoping Scoring
 Run distilled multi-task ORMs to judge reasoning traces for general correctness and scoping quality:
 ```
-python main.py --input-json-file ../data/[finqa|quantemp]/test.json --output-json-file outputs/output.json --task [fc|qa] --split [gold|reranked|qrel|whole_document|fsr] --verifier-multitask verifier/[desired config name].toml
+python main.py --input-json-file ../data/[finqa|quantemp]/test_[finqa|quantemp].json --output-json-file outputs/output.json --task [fc|qa] --split [gold|reranked|qrel|whole_document|fsr] --verifier-multitask verifier/[desired config name].toml
 ```
 _Note: output json must match existing json file which already contains standard inference outputs. Ensure the verifier path is correct and the model weights exist!_
 
@@ -201,7 +217,7 @@ _Note: temperatures can be customized by changing the `llm/tts_completion_params
 
 ### Custom Datasets
 
-To use your own data, create a new `../data/*.json` file with matching formats for each specific task.
+To use your own data, create a new `../data/*.json` file with matching formats for each specific task. Furthermore, any evidence split can be added to any existing files by creating a new dictionary key containing the associated evidence and changing the `--split` parameter.
 
 ## Output Format
 
