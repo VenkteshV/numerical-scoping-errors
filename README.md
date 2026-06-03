@@ -10,19 +10,19 @@ This repository provides code for:
 
 1. Prompting pre-trained LLMs to either fact-check complex numerical claims or answer multi-step numerical questions using evidence.
 
-<img src="./assets/pipeline.png" alt="Inference pipeline" style="width:50%; height:auto;">
+<img src="./assets/pipeline.png" alt="Inference pipeline" style="width:70%; height:auto;">
 
-3. Detecting scoping errors in fact-checking or QA reasoning traces at a statistic- and trace-level using a hybrid LLM-as-a-Judge pipeline.
+2. Detecting scoping errors in fact-checking or QA reasoning traces at a statistic- and trace-level using a hybrid LLM-as-a-Judge pipeline.
 
-<img src="./assets/judge_pipeline.png" alt="Hybrid LLM-as-a-Judge pipeline" style="width:50%; height:auto;">
+<img src="./assets/judge_pipeline.png" alt="Hybrid LLM-as-a-Judge pipeline" style="width:70%; height:auto;">
 
-4. Distilling correctness and scoping error signals into outcome reward models.
+3. Distilling correctness and scoping error signals into outcome reward models.
 
-<img src="./assets/distillation.png" alt="Distillation into Scoping-Aware ORMs" style="width:50%; height:auto;">
+<img src="./assets/distillation.png" alt="Distillation into Scoping-Aware ORMs" style="width:100%; height:auto;">
 
-5. Using detected scoping error signals to select candidate LLM reasoning traces in test-time scaling.
+4. Using detected scoping error signals to select candidate LLM reasoning traces in test-time scaling.
 
-<img src="./assets/variants.png" alt="Scoping-aware mitigation variants" style="width:50%; height:auto;">
+<img src="./assets/variants.png" alt="Scoping-aware mitigation variants" style="width:80%; height:auto;">
 
 #### Key Features:
 
