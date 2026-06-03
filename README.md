@@ -221,7 +221,89 @@ To use your own data, create a new `../data/*.json` file with matching formats f
 
 ## Output Format
 
+Outputs are returned in single json files defined by the `--output-json-file` parameter. Output json files can contain the following keys:
+
+```
+{
+    "input_json_file": "...",                          # Input json file used to generate these results, defined by --input-json-file parameter
+    "evidence_split": "...",                           # Evidence split used to generate these results, defined by --split parameter
+    "outputs": [ {                                     # Contains the general inference results of accomplishing each query in the task
+        "repsonse": " ... ",                           # Exact string response returned by general inference model for the i-th query in the input json file
+        "total_time": float,                           # Time taken to get response
+    }, ... ],
+    "validation": { ... },                             # General inference validation results, change depending on the task type: EM accuracies, F1 scores, and invalidity rates
+    "judge": [ { ... }, ...],                          # Straight LLM-as-a-Judge inference results for detecting scoping, arithmetic, and looping errors
+    "judge_validation": { ... },                       # Straight LLM-as-a-Judge validation results, mainly counts of error prevalence and pestilence
+    "advanced_judge": [ {                              # Contains the Hybrid LLM-as-a-Judge pipeline results for detecting scoping errors at statistic- and trace-levels for each trace
+        "valid": True|False,                           # Whether this judge response returned a valid result
+        "raw_scoping_error": True|False,               # Whether this reasoning trace contained a scoping error in any statistic, even the non-important ones
+        "filtered_scoping_error": True|False,          # Whether this reasoning trace contained a scoping error in an important statistic (DEFAULT)
+        "per_class": {                                 # Counts of each type of statistic and how many were mis-scoped
+            "extractive": {'n': int, 'n_correct': int, 'n_incorrect': int, 'n_unknown': int},
+            "extrapolative": { ... },
+            "parametric": { ... },
+            "unknown": { ... },
+        },
+        "errors": [ { ... }, ... ],                    # List of all the statistics that were mis-scoped
+        "unknowns": [ { ... }, ... ],                  # List of all the statistics that had an unknown type or unknown scoping label
+        "thinking_quantities": {                       # All extracted thinking statistics, their de-duplication attributes, type, and scoping correctness labels
+            "4187.8": [ {
+                "quantity_texts": [ "$ 4187.8 million", ... ],    # List of mentions of the quantity in thinking
+                "sentence_idxs": [ int, ... ],                    # List of sentence idxs where the quantity appears
+                "sentence_texts": [ " ... ", ... ],               # List of sentences where quantity is mentioned
+                "quantity_metadata": {                            # Attributes used for quantity de-duplication and matching with input statistics
+                    "type": MONEY,
+                    "value": 4187800000.0,
+                    "unit": "MONEY",
+                    "approx": False,
+                    "tail": "$",
+                    "text": "$ 4187.8 million",
+                },
+                "type": "extractive",                             # The type of statistic as identified by pipeline: extractive, extrapolative, parametric, or unknown
+                "correct": "true",                                # Whether the statistic is scope-valid (true), mis-scoped (false), or unknown
+                "check": { ... },                                 # Exact json provided by the LLM-judge call to decide the scoping label
+                "importance": float,                              # Importance weight given by the importance LLM-judge
+                "importance_check": { ... },                      # Exact json provided by the LLM-judge call to decide the quantity importance
+            }, ... other versions of 4187.8 that is not monetary ],
+            ...
+        },
+        "response_dicts":  {                             # Exact response dicts for each step in the hybrid LLM-as-a-Judge pipeline
+            "extractive": {
+                "str_response": [ " ... ", ... ],        # List of all str responses for this type of judge call for each block of 20 statistics
+                "time": [ float, ... ],                  # List of all times for each judge call for each block of 20 statistics
+                "results": [ true|false|unknown, ... ],  # List of all scoping labels for each statistic across all judge calls
+                "json": { ... },                         # Full result json parsed across all judge calls
+                "valid_json": [ True|False, ... ],       # Whether each returned json was parseable
+                "valid": True|False,                     # Whether entire step of the hybrid LLM-as-a-Judge was valid
+            },
+            "non_extractive": { ... },
+            "importance": { ... },
+        }, 
+    }, ... ],
+    "verifier": {                                        # Verifier scores for each reasoning trace depending on config toml files
+        "verifier/config_[finqa|quantemp].toml": [ {     # Single-task verifier scores for trace correctness/scoping quality
+            "score": float,                              # Verifier score for a trace without the thinking included in inputs
+            "score_thinking": float,                     # Verifier score for a trace WITH thinking included in inputs (DEFAULT)
+            "total_time": float,                         # Time taken for verifier to return a response
+        }, ... ],
+        "verifier/config_[finqa|quantemp]_multitask.toml": [ {
+            "score": float,                              # Correctness verifier score for a trace without the thinking included in inputs
+            "score_thinking": float,                     # Correctness verifier score for a trace WITH thinking included in inputs (DEFAULT)
+            "scoping_score": float,                      # Scoping verifier score for a trace without the thinking included in inputs
+            "scoping_score_thinking": float,             # Scoping verifier score for a trace WITH thinking included in inputs (DEFAULT)
+            "total_time": float,                         # Time taken for verifier to return a response
+        }, ... ],
+    },
+}
+```
+
 ## References
+
+1. [Thesis Report]()
+2. [QUANTEMP Dataset](https://arxiv.org/abs/2403.17169)
+3. [FinQA Dataset](https://arxiv.org/abs/2109.00122)
+4. [LMStudio](https://lmstudio.ai/)
+5. [Deepseek models](https://arxiv.org/abs/2412.19437)
 
 ## License
 
