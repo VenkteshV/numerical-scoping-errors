@@ -77,8 +77,8 @@ root/
 
 ### 1. Clone this repository
 ```
-git clone https://github.com/msmink01/overanalysis-thesis.git
-cd overanalysis-thesis/code
+git clone https://github.com/msmink01/numerical-scoping-errors.git
+cd numerical-scoping-errors/code
 ```
 
 ### 2. Create the main virtual environment and install dependencies
