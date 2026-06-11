@@ -2,7 +2,7 @@ import os
 import sys
 import json
 import time
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from validation.validation_handler import ValidationHandler
 from llm.prompt_handler import PromptHandler
 from llm.llm_handler import LLMHandler
@@ -18,18 +18,10 @@ class NumericalReasoningHandler:
     """
     def __init__(
             self,
-            task="fc",
-            platform="local"):
+            task="fc"):
 
         self.task = task
-        self.platform = platform
-
-        if platform == "local":
-            from llm.llm_handler import LLMHandler
-            self.llm_handler = LLMHandler()
-        else:
-            from llm.llm_handler_delftblue import LLMHandler
-            self.llm_handler = LLMHandler()
+        self.llm_handler = LLMHandler()
 
         self.validation_handler = ValidationHandler(task=task)
         self.prompt_handler = PromptHandler(task=task)
@@ -41,25 +33,25 @@ class NumericalReasoningHandler:
         """Function used to color cmd line text."""
         return f"\033[{color_code}m{text}\033[0m"
     
-    def process_query(self, query: str, evidence_list: List[str], fc_example_list: List[Dict[str, Any]], on_tok=None) -> str:
+    def process_query(self, query: str, evidence_list: List[str], fc_example_list: List[Dict[str, Any]], on_tok=None) -> Tuple[str, str]:
         """Runs a single fact-check/qa query."""
         user_prompt = self.prompt_handler.get_user_message(query, evidence_list, fc_example_list)
         response, total_time = self.llm_handler.generate_response(self.system_prompt, user_prompt, on_token=on_tok)
         return response, total_time
     
-    def process_query_judge(self, query: str, evidence_list: List[str], response: str, actual_label: str, on_tok=None) -> str:
+    def process_query_judge(self, query: str, evidence_list: List[str], response: str, actual_label: str, on_tok=None) -> Tuple[str, str]:
         """Runs a single fact-check/qa LLM-as-a-judge query."""
         user_prompt = self.prompt_handler.get_user_message(query, evidence_list, fc_example_list=None, metadata={'response': response, 'actual_label': actual_label}, variant="judge")
         response, total_time = self.llm_handler.generate_response(self.judge_system_prompt, user_prompt, on_token=on_tok)
         return response, total_time
     
-    def process_query_judge_new(self, query: str, evidence_list: List[str], response: str, actual_label: str, on_tok=None) -> str:
+    def process_query_judge_new(self, query: str, evidence_list: List[str], response: str, actual_label: str, on_tok=None) -> Tuple[str, str]:
         """Runs a single fact-check/qa LLM-as-a-judge query."""
         user_prompt = self.prompt_handler.get_user_message(query, evidence_list, fc_example_list=None, metadata={'response': response, 'actual_label': actual_label}, variant="judge_new")
         response, total_time = self.llm_handler.generate_response(self.judge_new_system_prompt, user_prompt, on_token=on_tok)
         return response, total_time
     
-    def run(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=20, golden: bool=False, evidence_split: str="doc", completion_params: list=None) -> List[Dict[str, Any]]:
+    def run(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=20, evidence_split: str="gold", completion_params: list=None) -> List[Dict[str, Any]]:
         """
         Main function for inference processing
 
@@ -68,7 +60,6 @@ class NumericalReasoningHandler:
             output_json_file (str): json file to save outputs
             log (bool): whether to log intermediate statements
             checkpoint (int): how often to save to the output file
-            golden (bool): whether to use golden evidence
             evidence_split (str): which evidence split to use
         """
         if log:
@@ -80,7 +71,7 @@ class NumericalReasoningHandler:
             with open(output_json_file, "r") as f:
                 output_json = json.load(f)
 
-            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'golden' in output_json and output_json['input_json_file'] == input_json_file and output_json['golden'] == golden:
+            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'evidence_split' in output_json and output_json['input_json_file'] == input_json_file and output_json['evidence_split'] == evidence_split:
                 if log:
                     print("Previous checkpoint loaded.")
                 output = output_json
@@ -88,15 +79,7 @@ class NumericalReasoningHandler:
                 print(f"ERROR! Output file exists and has results not matching current input file!")
                 sys.exit()
         else:
-            output = {'input_json_file': input_json_file, 'golden': golden, 'outputs': [], 'evidence_split': evidence_split}
-
-        # Check evidence split
-        if 'evidence_split' not in output:
-            output['evidence_split'] = evidence_split
-        else:
-            if output['evidence_split'] != evidence_split:
-                print(f"ERROR! Output file exists and has evidence_split not matching desired evidence split {evidence_split} {output['evidence_split']}!")
-                sys.exit()
+            output = {'input_json_file': input_json_file, 'outputs': [], 'evidence_split': evidence_split}
 
         # Load correct completion params if given
         if completion_params:
@@ -126,17 +109,14 @@ class NumericalReasoningHandler:
                 if log:
                     print(self.color_text(f"{i+start_index} Processing: {query['claim']}", "93"))
 
-                if golden: # if supposed to use the golden evidences
+                if evidence_split == "gold": # if supposed to use the fc golden evidences
                     response, total_time = self.process_query(query['claim'], [query[evidence_split]], query['examples'], on_tok=on_tok)
                 else:
                     response, total_time = self.process_query(query['claim'], query[evidence_split], query['examples'], on_tok=on_tok)
             else:
                 if log:
                     print(self.color_text(f"{i+start_index} Processing: {query['question']}", "93"))
-                if golden: # if supposed to use the golden evidences
-                    response, total_time = self.process_query(query['question'], query[evidence_split], query['examples'], on_tok=on_tok)
-                else:
-                    response, total_time = self.process_query(query['question'], query[evidence_split], query['examples'], on_tok=on_tok)
+                response, total_time = self.process_query(query['question'], query[evidence_split], query['examples'], on_tok=on_tok)
             
             output['outputs'].append({'response': response, 'total_time': total_time})
 
@@ -223,7 +203,7 @@ class NumericalReasoningHandler:
         if log:
             print(f"Finished validation.")
 
-    def judge(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=20, golden: bool=False, evidence_split: str="doc"):
+    def judge(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=20, evidence_split: str="gold"):
         """
         Main function for LLM-as-a-judge processing
 
@@ -232,7 +212,6 @@ class NumericalReasoningHandler:
             output_json_file (str): json file to save outputs
             log (bool): whether to log intermediate statements
             checkpoint (int): how often to save to the output file
-            golden (bool): whether to use golden evidence
             evidence_split (str): which evidence split to use
         """
         if log:
@@ -244,7 +223,7 @@ class NumericalReasoningHandler:
             with open(output_json_file, "r") as f:
                 output_json = json.load(f)
 
-            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'golden' in output_json and 'evidence_split' in output_json and output_json['input_json_file'] == input_json_file and output_json['golden'] == golden and output_json['evidence_split'] == evidence_split:
+            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'evidence_split' in output_json and output_json['input_json_file'] == input_json_file and output_json['evidence_split'] == evidence_split:
                 if log:
                     print("Inference outputs loaded.")
                 output = output_json
@@ -281,17 +260,14 @@ class NumericalReasoningHandler:
                 if log:
                     print(self.color_text(f"{i+start_index} Processing: {query['claim']}", "93"))
 
-                if golden: # if supposed to use the golden evidences
+                if evidence_split == "gold": # if supposed to use the fc golden evidences
                     response, total_time = self.process_query_judge(query['claim'], [query[evidence_split]], output_json['outputs'][i+start_index]['response'], query['label'], on_tok=on_tok)
                 else:
                     response, total_time = self.process_query_judge(query['claim'], query[evidence_split], output_json['outputs'][i+start_index]['response'], query['label'], on_tok=on_tok)
             else:
                 if log:
                     print(self.color_text(f"{i+start_index} Processing: {query['question']}", "93"))
-                if golden: # if supposed to use the golden evidences
-                    response, total_time = self.process_query_judge(query['question'], query[evidence_split], output_json['outputs'][i+start_index]['response'], query['answer'], on_tok=on_tok)
-                else:
-                    response, total_time = self.process_query_judge(query['question'], query[evidence_split], output_json['outputs'][i+start_index]['response'], query['answer'], on_tok=on_tok)
+                response, total_time = self.process_query_judge(query['question'], query[evidence_split], output_json['outputs'][i+start_index]['response'], query['answer'], on_tok=on_tok)
             
             output['judge'].append({'response': response, 'total_time': total_time})
 
@@ -357,8 +333,7 @@ class NumericalReasoningHandler:
         if log:
             print(f"Finished judge validation.")
 
-
-    def judge_new(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=20, golden: bool=False, evidence_split: str="doc"):
+    def judge_new(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=20, evidence_split: str="gold"):
         """
         Main function for LLM-as-a-judge processing
 
@@ -367,7 +342,6 @@ class NumericalReasoningHandler:
             output_json_file (str): json file to save outputs
             log (bool): whether to log intermediate statements
             checkpoint (int): how often to save to the output file
-            golden (bool): whether to use golden evidence
             evidence_split (str): which evidence split to use
         """
         if log:
@@ -379,7 +353,7 @@ class NumericalReasoningHandler:
             with open(output_json_file, "r") as f:
                 output_json = json.load(f)
 
-            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'golden' in output_json and 'evidence_split' in output_json and output_json['input_json_file'] == input_json_file and output_json['golden'] == golden and output_json['evidence_split'] == evidence_split:
+            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'evidence_split' in output_json and output_json['input_json_file'] == input_json_file and output_json['evidence_split'] == evidence_split:
                 if log:
                     print("Inference outputs loaded.")
                 output = output_json
@@ -416,17 +390,14 @@ class NumericalReasoningHandler:
                 if log:
                     print(self.color_text(f"{i+start_index} Processing: {query['claim']}", "93"))
 
-                if golden: # if supposed to use the golden evidences
+                if evidence_split == "gold": # if supposed to use the fc golden evidences
                     response, total_time = self.process_query_judge_new(query['claim'], [query[evidence_split]], output_json['outputs'][i+start_index]['response'], query['label'], on_tok=on_tok)
                 else:
                     response, total_time = self.process_query_judge_new(query['claim'], query[evidence_split], output_json['outputs'][i+start_index]['response'], query['label'], on_tok=on_tok)
             else:
                 if log:
                     print(self.color_text(f"{i+start_index} Processing: {query['question']}", "93"))
-                if golden: # if supposed to use the golden evidences
-                    response, total_time = self.process_query_judge_new(query['question'], query[evidence_split], output_json['outputs'][i+start_index]['response'], query['answer'], on_tok=on_tok)
-                else:
-                    response, total_time = self.process_query_judge_new(query['question'], query[evidence_split], output_json['outputs'][i+start_index]['response'], query['answer'], on_tok=on_tok)
+                response, total_time = self.process_query_judge_new(query['question'], query[evidence_split], output_json['outputs'][i+start_index]['response'], query['answer'], on_tok=on_tok)
             
             output['judge_new'].append({'response': response, 'total_time': total_time})
 
@@ -447,7 +418,7 @@ class NumericalReasoningHandler:
 
         return output
 
-    def verify(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=50, golden: bool=False, evidence_split: str="doc", verifier_config_path: str="verifier/config.toml"):
+    def verify(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=50, evidence_split: str="gold", verifier_config_path: str="verifier/config.toml", with_evidence: bool=False):
         """
         Main function for Verifier processing
 
@@ -456,8 +427,9 @@ class NumericalReasoningHandler:
             output_json_file (str): json file to save outputs
             log (bool): whether to log intermediate statements
             checkpoint (int): how often to save to the output file
-            golden (bool): whether to use golden evidence
             evidence_split (str): which evidence split to use
+            verifier_config_path (str): path to the verifier toml file
+            with_evidence (bool): whether to include evidence when using the verifier
         """
         think_tag_start = "<think>"
         think_tag_end = "</think>"
@@ -471,7 +443,7 @@ class NumericalReasoningHandler:
             with open(output_json_file, "r") as f:
                 output_json = json.load(f)
 
-            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'golden' in output_json and 'evidence_split' in output_json and output_json['input_json_file'] == input_json_file and output_json['golden'] == golden and output_json['evidence_split'] == evidence_split:
+            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'evidence_split' in output_json and output_json['input_json_file'] == input_json_file and output_json['evidence_split'] == evidence_split:
                 if log:
                     print("Inference outputs loaded.")
                 output = output_json
@@ -552,6 +524,14 @@ Justification: {output_dict['justification'] if output_dict['justification'] els
 Final Answer: {output_dict['label'] if (output_dict['label'] and output_dict['label'] != 'None') else 'UNKNOWN'}
 Justification: {output_dict['justification'] if output_dict['justification'] else 'UNKNOWN'}
 Thinking: {thinking if thinking else 'UNKNOWN'}"""
+                
+            if with_evidence:
+                if evidence_split == "gold":
+                    evidences = self.prompt_handler.get_evidences(query[evidence_split])
+                else:
+                    evidences = self.prompt_handler.get_evidences([query[evidence_split]])
+                input_text += f"\nEvidences: {evidences}"
+                input_text_thinking += f"\nEvidences: {evidences}"
        
             t0 = time.time()
             score = verifier.score_text(input_text)
@@ -577,8 +557,7 @@ Thinking: {thinking if thinking else 'UNKNOWN'}"""
 
         return output
 
-
-    def verify_multitask(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=50, golden: bool=False, evidence_split: str="doc", verifier_config_path: str="verifier/config_finqa_multitask.toml"):
+    def verify_multitask(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=50, evidence_split: str="gold", verifier_config_path: str="verifier/config_finqa_multitask.toml", with_evidence: bool=False):
         """
         Main function for Verifier processing
 
@@ -587,8 +566,9 @@ Thinking: {thinking if thinking else 'UNKNOWN'}"""
             output_json_file (str): json file to save outputs
             log (bool): whether to log intermediate statements
             checkpoint (int): how often to save to the output file
-            golden (bool): whether to use golden evidence
             evidence_split (str): which evidence split to use
+            verifier_config_path (str): path to the verifier toml file
+            with_evidence (bool): whether to include evidence when using the verifier
         """
         think_tag_start = "<think>"
         think_tag_end = "</think>"
@@ -602,7 +582,7 @@ Thinking: {thinking if thinking else 'UNKNOWN'}"""
             with open(output_json_file, "r") as f:
                 output_json = json.load(f)
 
-            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'golden' in output_json and 'evidence_split' in output_json and output_json['input_json_file'] == input_json_file and output_json['golden'] == golden and output_json['evidence_split'] == evidence_split:
+            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'evidence_split' in output_json and output_json['input_json_file'] == input_json_file and output_json['evidence_split'] == evidence_split:
                 if log:
                     print("Inference outputs loaded.")
                 output = output_json
@@ -683,6 +663,14 @@ Justification: {output_dict['justification'] if output_dict['justification'] els
 Final Answer: {output_dict['label'] if (output_dict['label'] and output_dict['label'] != 'None') else 'UNKNOWN'}
 Justification: {output_dict['justification'] if output_dict['justification'] else 'UNKNOWN'}
 Thinking: {thinking if thinking else 'UNKNOWN'}"""
+                
+            if with_evidence:
+                if evidence_split == "gold":
+                    evidences = self.prompt_handler.get_evidences(query[evidence_split])
+                else:
+                    evidences = self.prompt_handler.get_evidences([query[evidence_split]])
+                input_text += f"\nEvidences: {evidences}"
+                input_text_thinking += f"\nEvidences: {evidences}"
        
             t0 = time.time()
             score, scoping_score = verifier.score_text(input_text)

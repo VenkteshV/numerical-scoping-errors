@@ -18,18 +18,10 @@ class ScopingErrorMeasurer:
     """
     def __init__(
             self,
-            task="fc",
-            platform="local"):
+            task="fc"):
 
         self.task = task
-        self.platform = platform
-
-        if platform == "local":
-            from llm.llm_handler import LLMHandler
-            self.llm_handler = LLMHandler(completion_params_file="llm/completion_params_judge.json")
-        else:
-            from llm.llm_handler_delftblue import LLMHandler
-            self.llm_handler = LLMHandler()
+        self.llm_handler = LLMHandler(completion_params_file="llm/completion_params_judge.json")
 
         self.prompt_handler = PromptHandler(task=task)
         self.segmenter = Segmenter()
@@ -42,7 +34,6 @@ class ScopingErrorMeasurer:
         self.extractive_check_system_prompt = self.prompt_handler.get_system_message(variant="extractive_check")
         self.non_extractive_check_system_prompt = self.prompt_handler.get_system_message(variant="non_extractive_check")
         self.importance_check_system_prompt = self.prompt_handler.get_system_message(variant="importance_check")
-
 
     def color_text(self, text: str, color_code: str) -> str:
         """Function used to color cmd line text."""
@@ -101,8 +92,8 @@ class ScopingErrorMeasurer:
             # extract input quantities
             final_quantities = dict()
             claim_text = self.segmenter.normalize_text(query['claim']) if self.task == 'fc' else self.segmenter.normalize_text(query['question'])
-            evidences_text = [query[evidence_split]] if evidence_split == "doc" and self.task == "fc" else [l for l in query[evidence_split]]
-            if self.task == "qa" and evidence_split == "doc":
+            evidences_text = [query[evidence_split]] if evidence_split == "gold" and self.task == "fc" else [l for l in query[evidence_split]]
+            if self.task == "qa" and evidence_split == "whole_document":
                 table = [s.split("|") for s in evidences_text[1].split("\n")[1:]]
                 evidences_text[1] = "\n".join([self.segmenter.convert_finqa_table_row_to_text(table[0], row) for row in table[1:]])
             evidences_text = [self.segmenter.normalize_text(evidence) for evidence in evidences_text]
@@ -179,7 +170,6 @@ class ScopingErrorMeasurer:
             print(f"Input quantity segmentation processing finished in {total_time} seconds...")
 
         return input_json_file_quantities
-
 
     def extract_thinking_quantities(self, thinking, final_quantities = None):
         """
@@ -273,7 +263,6 @@ class ScopingErrorMeasurer:
                 final_answer = final_answer[1:].strip()
 
         return thinking, final_answer, justification
-
 
     def extractive_check(self, query, evidences, thinking, thinking_quantities, formatted_quantities, log, on_tok):
         """
@@ -369,7 +358,6 @@ class ScopingErrorMeasurer:
         
         return response_dict, thinking_quantities
     
-
     def non_extractive_check(self, query, evidences, thinking, thinking_quantities, formatted_quantities, log, on_tok):
         """
         Function that checks whether a list of non extractive quantities are parametric or extrapolative and correct.
@@ -471,7 +459,6 @@ class ScopingErrorMeasurer:
 
         return response_dict, thinking_quantities
     
-
     def importance_check(self, query, evidences, thinking, final_answer, justification, thinking_quantities, formatted_quantities, log, on_tok):
         """
         Function that gets importance weights for statistics for scoring calculation.
@@ -601,8 +588,7 @@ class ScopingErrorMeasurer:
 
         return response_dict, thinking_quantities
 
-
-    def run(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=5, golden: bool=False, input_json_file_quantities: str = None, evidence_split: str="doc"):
+    def run(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=5, input_json_file_quantities: str = None, evidence_split: str="gold"):
         """
         Main function for measuring scoping error processing
 
@@ -611,7 +597,6 @@ class ScopingErrorMeasurer:
             output_json_file (str): json file to save outputs
             log (bool): whether to log intermediate statements
             checkpoint (int): how often to save to the output file
-            golden (bool): whether to use golden evidence
             input_json_file_quantities (str): json file that contains the quantities for the inputs (optional)
             evidence_split (str): which evidence split to use
         """
@@ -624,7 +609,7 @@ class ScopingErrorMeasurer:
             with open(output_json_file, "r") as f:
                 output_json = json.load(f)
 
-            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'golden' in output_json and 'evidence_split' in output_json and output_json['input_json_file'] == input_json_file and output_json['golden'] == golden and output_json['evidence_split'] == evidence_split:
+            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'evidence_split' in output_json and output_json['input_json_file'] == input_json_file and output_json['evidence_split'] == evidence_split:
                 if log:
                     print("Inference outputs loaded.")
                 output = output_json
@@ -668,7 +653,7 @@ class ScopingErrorMeasurer:
             t0 = time.time()
 
             q = query['claim'] if self.task == "fc" else query['question']
-            evidences = [query[evidence_split]] if self.task == "fc" and evidence_split == "doc" else query[evidence_split]
+            evidences = [query[evidence_split]] if self.task == "fc" and evidence_split == "gold" else query[evidence_split]
             thinking, final_answer, justification = self.process_output(outputs['response'])
             
             # extract thinking quantities
@@ -838,7 +823,6 @@ class ScopingErrorMeasurer:
 
         return output
 
-
     def extractive_check_repair(self, query, evidences, thinking, thinking_quantities, formatted_quantities, log, on_tok, repair):
         """
         Function that checks whether a list of extractive quantities is extracted correctly.
@@ -949,7 +933,6 @@ class ScopingErrorMeasurer:
         response_dict['valid'] = valid
         
         return response_dict, thinking_quantities
-
 
     def non_extractive_check_repair(self, query, evidences, thinking, thinking_quantities, formatted_quantities, log, on_tok, repair):
         """
@@ -1069,10 +1052,9 @@ class ScopingErrorMeasurer:
 
         return response_dict, thinking_quantities
     
-
     def importance_check_repair(self, query, evidences, thinking, final_answer, justification, thinking_quantities, formatted_quantities, log, on_tok, repair):
         """
-        Function that gets importance weights for statistics for scoring calculation.
+        Function that repairs importance weights for statistics for scoring calculation.
 
         Args:
             query (str): claim to fact-check or question to answer
@@ -1218,17 +1200,15 @@ class ScopingErrorMeasurer:
 
         return response_dict, thinking_quantities
 
-
-    def repair(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=5, golden: bool=False, input_json_file_quantities: str = None, evidence_split: str = "doc"):
+    def repair(self, input_json_file: str, output_json_file: str, log: bool=True, checkpoint: int=5, input_json_file_quantities: str = None, evidence_split: str = "gold"):
         """
-        Main function for repairing measured scoping errors
+        Main function for repairing measured scoping errors. Will re-do any LLM calls that failed. Will update results accordingly.
 
         Args:
             input_json_file (str): json file that contains inputs
             output_json_file (str): json file to save outputs
             log (bool): whether to log intermediate statements
             checkpoint (int): how often to save to the output file
-            golden (bool): whether to use golden evidence
             input_json_file_quantities (str): json file that contains the quantities for the inputs (optional)
             evidence_split (str): which evidence split to use
         """
@@ -1237,16 +1217,15 @@ class ScopingErrorMeasurer:
             print(f"Starting {self.task} advanced judge repair processing...")
 
         # Load LLMHandler with lengthier outputs
-        if self.platform == "local":
-            print("Loaded lengthier LLM-as-a-Judge.")
-            self.llm_handler = LLMHandler(completion_params_file="llm/completion_params_judge_lengthy.json")
+        print("Loaded lengthier LLM-as-a-Judge.")
+        self.llm_handler = LLMHandler(completion_params_file="llm/completion_params_judge_lengthy.json")
 
         # Load outputs and previous checkpoint
         if os.path.isfile(output_json_file):
             with open(output_json_file, "r") as f:
                 output_json = json.load(f)
 
-            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'golden' in output_json and 'evidence_split' in output_json and output_json['input_json_file'] == input_json_file and output_json['golden'] == golden and output_json['evidence_split'] == evidence_split and 'advanced_judge' in output_json:
+            if output_json and 'outputs' in output_json and 'input_json_file' in output_json and 'evidence_split' in output_json and output_json['input_json_file'] == input_json_file and output_json['evidence_split'] == evidence_split and 'advanced_judge' in output_json:
                 if log:
                     print("Inference outputs loaded.")
                 output = output_json
@@ -1289,7 +1268,7 @@ class ScopingErrorMeasurer:
             t0 = time.time()
 
             q = query['claim'] if self.task == "fc" else query['question']
-            evidences = [query[evidence_split]] if self.task == "fc" and evidence_split == "doc" else query[evidence_split]
+            evidences = [query[evidence_split]] if self.task == "fc" and evidence_split == "gold" else query[evidence_split]
             thinking, final_answer, justification = self.process_output(outputs['response'])
 
             thinking_quantities = advanced_judge_outputs['thinking_quantities']

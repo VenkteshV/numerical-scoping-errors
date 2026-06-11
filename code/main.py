@@ -35,7 +35,6 @@ def parse_completion_params(completion_params, output_json):
 
 def run(args):
     print(f"Task: {args.task}")
-    print(f"Gold: {args.gold}")
     print(f"Validation: {args.validation}")
     print(f"Judge: {args.judge}")
     print(f"Advanced Judge: {args.advanced_judge}")
@@ -45,36 +44,34 @@ def run(args):
 
     for c_params, output_file in zip(completion_params_list, output_file_list):
         print(f"\n\nStarting run for {output_file}!\n\n")
-        nr_handler = NumericalReasoningHandler(task=args.task, platform=args.platform)
-        nr_handler.run(args.input_json_file, output_file, log=args.log, golden=args.gold, evidence_split=args.split, completion_params=c_params)
+        nr_handler = NumericalReasoningHandler(task=args.task)
+        nr_handler.run(args.input_json_file, output_file, log=args.log, evidence_split=args.split, completion_params=c_params)
         if args.validation:
             nr_handler.validate(args.input_json_file, output_file, log=args.log)
         if args.judge:
-            nr_handler.judge(args.input_json_file, output_file, log=args.log, golden=args.gold, evidence_split=args.split)
+            nr_handler.judge(args.input_json_file, output_file, log=args.log, evidence_split=args.split)
             if args.validation:
                 nr_handler.validate_judge(args.input_json_file, output_file, log=args.log)
         if args.judge_new:
-            nr_handler.judge_new(args.input_json_file, output_file, log=args.log, golden=args.gold, evidence_split=args.split)
+            nr_handler.judge_new(args.input_json_file, output_file, log=args.log, evidence_split=args.split)
         if args.advanced_judge:
-            scoping_error_measurer = ScopingErrorMeasurer(task=args.task, platform=args.platform)
-            scoping_error_measurer.run(args.input_json_file, output_file, log=args.log, golden=args.gold, evidence_split=args.split)
+            scoping_error_measurer = ScopingErrorMeasurer(task=args.task)
+            scoping_error_measurer.run(args.input_json_file, output_file, log=args.log, evidence_split=args.split)
             if args.repair:
-                scoping_error_measurer.repair(args.input_json_file, output_file, log=args.log, golden=args.gold, evidence_split=args.split)
+                scoping_error_measurer.repair(args.input_json_file, output_file, log=args.log, evidence_split=args.split)
         if args.verifier:
-            nr_handler.verify(args.input_json_file, output_file, log=args.log, golden=args.gold, evidence_split=args.split, verifier_config_path=args.verifier)
+            nr_handler.verify(args.input_json_file, output_file, log=args.log, evidence_split=args.split, verifier_config_path=args.verifier, with_evidence=args.with_evidence)
         if args.verifier_multitask:
-            nr_handler.verify_multitask(args.input_json_file, output_file, log=args.log, golden=args.gold, evidence_split=args.split, verifier_config_path=args.verifier_multitask)
+            nr_handler.verify_multitask(args.input_json_file, output_file, log=args.log, evidence_split=args.split, verifier_config_path=args.verifier_multitask, with_evidence=args.with_evidence)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Fact-checking")
+    parser = argparse.ArgumentParser(description="Generation Model Inference, Scoping Error Detection, and Scoping Error Mitigation")
     parser.add_argument("-i", "--input-json-file", dest="input_json_file", type=str, default=None, help="Path to json file to use as input")
     parser.add_argument("-o", "--output-json-file", dest="output_json_file", type=str, default=None, help="Path to json file (or folder if TTS) to use for output")  
     parser.add_argument("-l", "--log", dest="log", type=str2bool, default=True, help="Whether to print logs")
-    parser.add_argument("-g", "--gold", dest="gold", type=str2bool, default=False, help="Whether to use golden evidence or not")
     parser.add_argument("-t", "--task", dest="task", type=str, default="fc", help="Task to perform (fc or qa)")
     parser.add_argument("-s", "--split", dest="split", type=str, default="doc", help="Evidence split to use ('doc' or 'quantemp_evidences' or etc.)")
     parser.add_argument("-v", "--validation", dest="validation", type=str2bool, default=True, help="Whether to perform validation")
-    parser.add_argument("-p", "--platform", dest="platform", type=str, default="local", help="Which platform to perform inference on (local or delftblue)")
     parser.add_argument("-j", "--judge", dest="judge", type=str2bool, default=False, help="Whether to perform LLM-as-a-judge on the outputs of the main inference loop")
     parser.add_argument("-a", "--advanced-judge", dest="advanced_judge", type=str2bool, default=False, help="Whether to perform advanced LLM-as-a-judge on the outputs of the main inference loop to measure scoping errors")
     parser.add_argument("-r", "--repair", dest="repair", type=str2bool, default=False, help="Whether to repair advanced LLM-as-a-judge to measure scoping errors")
@@ -82,6 +79,7 @@ if __name__ == "__main__":
     parser.add_argument("-jn", "--judge-new", dest="judge_new", type=str2bool, default=False, help="Whether to perform LLM-as-a-judge NEW on the outputs of the main inference loop")
     parser.add_argument("-ve", "--verifier", dest="verifier", type=str, default=None, help="Whether to perform ranking verifier on the outputs of the main inference loop, if exists set to toml config file of verifier")
     parser.add_argument("-vem", "--verifier-multitask", dest="verifier_multitask", type=str, default=None, help="Whether to perform multitask verifier on the outputs of the main inference loop, if exists set to toml config file of multitask verifier")
+    parser.add_argument("-we", "--with-evidence", dest="with_evidence", type=str2bool, default=False, help="Whether to perform verifier on outputs of main inference loop WITH evidence in inputs or WITHOUT")
     args = parser.parse_args()
 
     run(args)
