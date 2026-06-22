@@ -6,3 +6,5 @@ sentencepiece
 tiktoken
 toml
 peft
+matplotlib
+textwrap
