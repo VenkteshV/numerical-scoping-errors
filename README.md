@@ -215,6 +215,8 @@ will perform standard inference for 12 reasoning traces per one query: 3 traces 
 
 _Note: temperatures can be customized by changing the `llm/tts_completion_params/*.json` files._
 
+Evaluation of test-time scaling variants can be carried out using `validation/tts_validation_handler.py`.
+
 ### Custom Datasets
 
 To use your own data, create a new `../data/*.json` file with matching formats for each specific task. Furthermore, any evidence split can be added to any existing files by creating a new dictionary key containing the associated evidence and changing the `--split` parameter.
@@ -299,12 +301,24 @@ Outputs are returned in single json files defined by the `--output-json-file` pa
 
 ## References
 
-1. [Thesis Report]()
+1. [Thesis Report](https://repository.tudelft.nl/record/uuid:919c8be0-b6a1-41df-bf05-ae46f4c51f86)
 2. [QUANTEMP Dataset](https://arxiv.org/abs/2403.17169)
 3. [FinQA Dataset](https://arxiv.org/abs/2109.00122)
 4. [LMStudio](https://lmstudio.ai/)
 5. [Deepseek models](https://arxiv.org/abs/2412.19437)
 
-## License
+## Citation
 
-This project is part of academic research at TU Delft. Please contact the author for licensing information and usage permissions.
+This project is part of academic research at TU Delft. Please contact the author for questions, collaboration, or usage permissions. If you use this thesis in your work, please cite:
+
+```
+@mastersthesis{Smink2026,
+  author       = {Moniek Smink},
+  title        = {Investigating Scoping Errors in Open-Domain Numerical Reasoning},
+  school       = {Delft University of Technology},
+  year         = {2026},
+  month        = {June},
+  note         = {Master's thesis, Electrical Engineering, Mathematics and Computer Science},
+  url          = {https://repository.tudelft.nl/record/uuid:919c8be0-b6a1-41df-bf05-ae46f4c51f86}
+}
+```
