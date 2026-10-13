@@ -77,7 +77,7 @@ root/
 
 ### 1. Clone this repository
 ```
-git clone https://github.com/msmink01/numerical-scoping-errors.git
+git clone <repo>
 cd numerical-scoping-errors/code
 ```
 
@@ -300,25 +300,8 @@ Outputs are returned in single json files defined by the `--output-json-file` pa
 ```
 
 ## References
+1. [QUANTEMP Dataset](https://arxiv.org/abs/2403.17169)
+2. [FinQA Dataset](https://arxiv.org/abs/2109.00122)
+3. [LMStudio](https://lmstudio.ai/)
+4. [Deepseek models](https://arxiv.org/abs/2412.19437)
 
-1. [Thesis Report](https://repository.tudelft.nl/record/uuid:919c8be0-b6a1-41df-bf05-ae46f4c51f86)
-2. [QUANTEMP Dataset](https://arxiv.org/abs/2403.17169)
-3. [FinQA Dataset](https://arxiv.org/abs/2109.00122)
-4. [LMStudio](https://lmstudio.ai/)
-5. [Deepseek models](https://arxiv.org/abs/2412.19437)
-
-## Citation
-
-This project is part of academic research at TU Delft. Please contact the author for questions, collaboration, or usage permissions. If you use this thesis in your work, please cite:
-
-```
-@mastersthesis{Smink2026,
-  author       = {Moniek Smink},
-  title        = {Investigating Scoping Errors in Open-Domain Numerical Reasoning},
-  school       = {Delft University of Technology},
-  year         = {2026},
-  month        = {June},
-  note         = {Master's thesis, Electrical Engineering, Mathematics and Computer Science},
-  url          = {https://repository.tudelft.nl/record/uuid:919c8be0-b6a1-41df-bf05-ae46f4c51f86}
-}
-```
